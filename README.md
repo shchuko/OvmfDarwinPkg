@@ -44,6 +44,8 @@ cd -
 
 # Create symbolic links to packages
 ln -s $PWD edk2/OvmfDarwinPkg
+ln -s $PWD/LegacyPackages/IntelFrameworkPkg edk2/IntelFrameworkPkg
+ln -s $PWD/LegacyPackages/IntelFrameworkModulePkg edk2/IntelFrameworkModulePkg
 
 # Build
 cd edk2
