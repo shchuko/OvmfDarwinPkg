@@ -35,6 +35,7 @@
   ShellPkg/ShellPkg.dec
 
 [LibraryClasses]
+  AppleSupportLib
   BaseLib
   MemoryAllocationLib
   UefiBootServicesTableLib

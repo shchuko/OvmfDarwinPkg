@@ -322,6 +322,11 @@ INF MdeModulePkg/Logo/LogoDxe.inf
   INF  OvmfDarwinPkg/VirtioNetDxe/VirtioNet.inf
 
 #
+# Required by AppleSupportLib
+#
+INF  IntelFrameworkModulePkg/Universal/DataHubDxe/DataHubDxe.inf
+
+#
 # Usb Support
 #
 INF  MdeModulePkg/Bus/Pci/UhciDxe/UhciDxe.inf

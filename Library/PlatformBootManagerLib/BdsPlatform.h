@@ -45,6 +45,7 @@ Abstract:
 #include <Library/QemuFwCfgLib.h>
 #include <Library/QemuFwCfgS3Lib.h>
 #include <Library/QemuBootOrderLib.h>
+#include <Library/AppleSupportLib.h>
 
 #include <Protocol/Decompress.h>
 #include <Protocol/PciIo.h>

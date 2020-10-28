@@ -232,6 +232,7 @@
   TpmMeasurementLib|MdeModulePkg/Library/TpmMeasurementLibNull/TpmMeasurementLibNull.inf
 !endif
 
+  AppleSupportLib|OvmfDarwinPkg/Library/AppleSupportLib/AppleSupportLib.inf
 [LibraryClasses.common]
   BaseCryptLib|CryptoPkg/Library/BaseCryptLib/BaseCryptLib.inf
   VmgExitLib|OvmfDarwinPkg/Library/VmgExitLib/VmgExitLib.inf
@@ -875,6 +876,12 @@
   }
 !endif
   OvmfDarwinPkg/VirtioNetDxe/VirtioNet.inf
+
+  #
+  # Required by AppleSupportLib
+  #
+  IntelFrameworkModulePkg/Universal/DataHubDxe/DataHubDxe.inf
+
 
   #
   # Usb Support

@@ -361,6 +361,11 @@ PlatformBootManagerBeforeConsole (
 
   VisitAllInstancesOfProtocol (&gEfiPciRootBridgeIoProtocolGuid,
     ConnectRootBridge, NULL);
+  
+  //
+  // Initialize AppleSupportLib
+  //
+  InitializeAppleSupport (gImageHandle, gST);
 
   //
   // Signal the ACPI platform driver that it can download QEMU ACPI tables.
@@ -1536,6 +1541,11 @@ PlatformBootManagerAfterConsole (
   SetBootOrderFromQemu ();
 
   PlatformBmPrintScRegisterHandler ();
+
+  //
+  // Launch Apple bootloader
+  //
+  BdsBootApple ();
 }
 
 /**
