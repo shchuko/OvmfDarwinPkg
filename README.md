@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.com/shchuko/OvmfDarwinPkg.svg?branch=master)](https://travis-ci.com/shchuko/OvmfDarwinPkg)
+
 # OvmfDarwinPkg
 
 [OVMF](https://github.com/tianocore/edk2/tree/master/OvmfPkg) clone that provides macOS guests support 
