@@ -860,6 +860,11 @@
   MdeModulePkg/Universal/Acpi/BootGraphicsResourceTableDxe/BootGraphicsResourceTableDxe.inf
 
   #
+  # HFS+ Support
+  #
+  OvmfDarwinPkg/FswHfsPlus/FswHfsPlus.inf
+
+  #
   # Network Support
   #
 !include NetworkPkg/NetworkComponents.dsc.inc
