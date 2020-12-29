@@ -202,7 +202,7 @@ fsw_hfsplus_dno_stat(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
  * Return a pointer to the B-Tree key at the beginning of the record.
  */
 static HFSPlusBTKey *
-fsw_hfsplus_bt_get_rec(BTNodeDescriptor* btnode, fsw_u16 size, fsw_u16 rnum)
+fsw_hfsplus_btnode_get_rec(BTNodeDescriptor* btnode, fsw_u16 size, fsw_u16 rnum)
 {
     fsw_u16 *off = (fsw_u16 *)((void *)btnode + size) - 1 - rnum;
     return (HFSPlusBTKey *)((void *)btnode + fsw_u16_be_swap(*off));
@@ -234,12 +234,9 @@ typedef int (*k_cmp_t)(HFSPlusBTKey*, HFSPlusBTKey*);
 
 /* Search an HFS+ special file's B-Tree (given by 'bt'), for a search key
  * matching 'sk', using comparison procedure 'k_cmp' to determine when a key
- * match occurs; Once found, skip over 'rec_skip' contiguous records
- * (following the enveloping nodes' 'fLink' pointers if necessary). Finish
- * by filling a caller-provided B-Tree node buffer ('btnode'), and returning
- * a pointer to the trial key of the matching record inside 'btnode', via
- * 'tk_ptr' (NOTE: unlike the search key, the trial key's fields will be
- * returned in unmodified, BigEndian encoding);
+ * match occurs;
+ * Finish by filling a caller-provided B-Tree node buffer ('btnode'), and returning
+ * record number of the matching record inside 'btnode', via 'rec_num';
  * On error, set fsw_status_t return code acoordingly.
  *
  * NOTE: A HFS+ volume has a few "special" files, linked directly from the
@@ -259,9 +256,11 @@ typedef int (*k_cmp_t)(HFSPlusBTKey*, HFSPlusBTKey*);
  *       'node-size' of all nodes in that B-Tree file.
  */
 static fsw_status_t
-fsw_hfsplus_bt_search(struct fsw_hfsplus_dnode *bt,
-                      HFSPlusBTKey *sk, k_cmp_t k_cmp, fsw_u64 rec_skip,
-                      BTNodeDescriptor *btnode, HFSPlusBTKey **tk_ptr)
+fsw_hfsplus_bt_search(struct fsw_hfsplus_dnode *bt, /* in */
+                      HFSPlusBTKey *sk, /* in */
+                      k_cmp_t k_cmp, /* in */
+                      BTNodeDescriptor *btnode, /* out */
+                      fsw_u32 *rec_num /* out */)
 {
     fsw_u32      node;
     fsw_u16      rec, lo, hi;
@@ -281,7 +280,7 @@ fsw_hfsplus_bt_search(struct fsw_hfsplus_dnode *bt,
 
         // sanity check: record 0 located immediately after node descriptor
         if ((void *)btnode + sizeof(BTNodeDescriptor) !=
-            (void *)fsw_hfsplus_bt_get_rec(btnode, bt->bt_ndsz, 0))
+            (void *)fsw_hfsplus_btnode_get_rec(btnode, bt->bt_ndsz, 0))
             return FSW_VOLUME_CORRUPTED;
 
         // search records within current node
@@ -290,7 +289,7 @@ fsw_hfsplus_bt_search(struct fsw_hfsplus_dnode *bt,
         while (lo <= hi) {
              // access record data, then compare to search key 'sk'
              rec = (lo + hi) >> 1;
-             tk = fsw_hfsplus_bt_get_rec(btnode, bt->bt_ndsz, rec);
+             tk = fsw_hfsplus_btnode_get_rec(btnode, bt->bt_ndsz, rec);
              cmp = k_cmp(tk, sk);
 
              if (cmp < 0)      // (tk < sk)
@@ -302,33 +301,8 @@ fsw_hfsplus_bt_search(struct fsw_hfsplus_dnode *bt,
                      hi = rec;
                      break;
                  }
-                 // found original 'sk'; fast-forward past 'rec_skip' records
-                 if (rec_skip > 0) {
 
-// FIXME: clean this up, refactor to make it elegant!
-    while (rec_skip >= fsw_u16_be_swap(btnode->numRecords) - rec) {
-        fsw_u32 fl = fsw_u32_be_swap(btnode->fLink);
-        rec_skip -= fsw_u16_be_swap(btnode->numRecords) - rec;
-        rec = 0;
-        if (fl == 0)
-            return FSW_NOT_FOUND;
-
-        status = fsw_hfsplus_read(bt, (fsw_u64)fl * bt->bt_ndsz,
-                                  bt->bt_ndsz, btnode);
-        if (status)
-            return status;
-
-        // sanity check: record 0 located immediately after node descriptor
-        if ((void *)btnode + sizeof(BTNodeDescriptor) !=
-            (void *)fsw_hfsplus_bt_get_rec(btnode, bt->bt_ndsz, 0))
-            return FSW_VOLUME_CORRUPTED;
-    }
-    rec = rec_skip;
-    tk = fsw_hfsplus_bt_get_rec(btnode, bt->bt_ndsz, rec);
-
-                 }
-                 // success: return pointer to trial key (within btnode)
-                 *tk_ptr = tk;
+                 *rec_num = rec;
                  return FSW_SUCCESS;
              }
         }
@@ -340,7 +314,7 @@ fsw_hfsplus_bt_search(struct fsw_hfsplus_dnode *bt,
             break;
 
         // on an index node, so descend to child
-        tk = fsw_hfsplus_bt_get_rec(btnode, bt->bt_ndsz, hi);
+        tk = fsw_hfsplus_btnode_get_rec(btnode, bt->bt_ndsz, hi);
         node = fsw_hfsplus_bt_idx_get_child(tk);
     }
 
@@ -352,7 +326,7 @@ fsw_hfsplus_bt_search(struct fsw_hfsplus_dnode *bt,
 /* Compare unsigned integers 'a' and 'b';
  * Return -1/0/1 if 'a' is less/equal/greater than 'b'.
  */
-static int //__attribute__((unused))
+static int
 fsw_hfsplus_int_cmp(fsw_u32 a, fsw_u32 b)
 {
     return (a < b) ? -1 : (a > b) ? 1 : 0;
@@ -369,7 +343,6 @@ fsw_hfsplus_ucblatin_tolower(fsw_u16 c)
         (c >= 0x0041 && c <= 0x005A))
         return c + 0x0020;
     return c;
-    // FIXME: does edk2 have its own built-in function we could use here?
 }
 
 /* Compare an on-disk catalog B-Tree trial key ('tk') with an in-memory
@@ -494,6 +467,152 @@ fsw_hfsplus_fswstr2unistr(HFSUniStr255* t, struct fsw_string* src)
     return status;
 }
 
+/**
+ * Iterate B-Tree records searching for `rec_skip` node starting from `rec_num` record of `btnode`
+ * @param bt B-Tree root
+ * @param parent_id parent dnode id (used as stop criteria: finished on unequal parent ids)
+ * @param btnode BTNode to start iterate from. On finish filled with actual value
+ * @param rec_num BTNode record number to start iterate from. On finish filled with actual value
+ * @param rec_skip Number of records to skip
+ * @return FSW_SUCCESS on success, else FSW_NOT_FOUND
+ */
+static fsw_status_t
+fsw_hfsplus_btree_get_rec(struct fsw_hfsplus_dnode *bt, /* in */
+                        fsw_u32 parent_id,  /* in */
+                        BTNodeDescriptor *btnode, /* in */ /* out */
+                        fsw_u32 *rec_num, /* in */ /* out */
+                        fsw_u64 *rec_skip /* in */ /* out */) {
+    fsw_status_t            status;
+    fsw_u32                 btnode_next;
+    fsw_u32                 num_records;
+    fsw_u32                 counter;
+    HFSPlusBTKey            *tk;
+    HFSPlusCatalogRecord    *rec;
+    fsw_u32                 i;
+
+    counter = 0;
+    for (;;) {
+        status = FSW_NOT_FOUND;
+        num_records = fsw_u16_be_swap(btnode->numRecords);
+
+        for (i = *rec_num; i < num_records; ++i) {
+            tk = fsw_hfsplus_btnode_get_rec(btnode, bt->bt_ndsz, i);
+
+            if (fsw_u32_be_swap(((HFSPlusCatalogKey*)(tk))->parentID) != parent_id) {
+                return status;
+            }
+
+            if (counter++ != *rec_skip) {
+                continue;
+            }
+
+            rec = fsw_hfsplus_bt_rec_skip_key(tk);
+            ++(*rec_skip);
+            switch (fsw_u16_be_swap(rec->recordType)) {
+                case kHFSPlusFileRecord:
+                case kHFSPlusFolderRecord:
+                    *rec_num = i;
+                    return FSW_SUCCESS;
+                    break;
+
+                case kHFSPlusFolderThreadRecord:
+                case kHFSPlusFileThreadRecord:
+                default:
+                    break;
+            }
+        }
+
+        btnode_next = fsw_u32_be_swap(btnode->fLink);
+        if (btnode_next == 0) {
+            return status;
+        }
+
+        status = fsw_hfsplus_read(bt, (fsw_u64) btnode_next * bt->bt_ndsz,
+                                  bt->bt_ndsz, btnode);
+        *rec_num = 0;
+        if (status) {
+            return status;
+        }
+    }
+
+    return status;
+}
+
+/**
+ * Create dnode from HFSPlusCatalogRecord
+ * @param rec Source catalog record
+ * @param d Parent dnode
+ * @param name Name
+ * @param d_out Created dnode
+ * @return FSW_SUCCESS on success, else fsw_dnode_create error status
+ */
+static fsw_status_t
+fsw_hfsplus_rec2dnode(HFSPlusCatalogRecord *rec,    /* in */ 
+                      struct fsw_hfsplus_dnode *d,  /* in */
+                      struct fsw_string *name,      /* in */
+                      struct fsw_hfsplus_dnode **d_out /* out */) {
+    fsw_status_t    status;
+    fsw_u32         child_dno_id;
+    fsw_u32         child_dno_type;
+
+    // figure out type of child dnode:
+    switch (fsw_u16_be_swap(rec->recordType)) {
+        case kHFSPlusFolderRecord:
+            child_dno_id = fsw_u32_be_swap(rec->folderRecord.folderID);
+            child_dno_type = FSW_DNODE_TYPE_DIR;
+            break;
+        case kHFSPlusFileRecord:
+            child_dno_id = fsw_u32_be_swap(rec->fileRecord.fileID);
+            child_dno_type = FSW_DNODE_TYPE_FILE;
+            break;
+        default:
+            child_dno_id = 0;
+            child_dno_type = FSW_DNODE_TYPE_UNKNOWN;
+            break;
+    }
+
+    // allocate child dnode:
+    status = fsw_dnode_create(d, child_dno_id, child_dno_type, name, d_out);
+    if (status) {
+        return status;
+    }
+
+    // grab additional child dnode status data:
+    switch (child_dno_type) {
+        case FSW_DNODE_TYPE_DIR:
+            (*d_out)->ct = fsw_u32_be_swap(rec->folderRecord.createDate);
+            (*d_out)->mt = fsw_u32_be_swap(rec->folderRecord.contentModDate);
+            (*d_out)->at = fsw_u32_be_swap(rec->folderRecord.accessDate);
+            break;
+        case FSW_DNODE_TYPE_FILE:
+            (*d_out)->g.size =
+                    fsw_u64_be_swap(rec->fileRecord.dataFork.logicalSize);
+            fsw_memcpy((*d_out)->extents, &rec->fileRecord.dataFork.extents,
+                       sizeof(HFSPlusExtentRecord));
+            (*d_out)->ct = fsw_u32_be_swap(rec->fileRecord.createDate);
+            (*d_out)->mt = fsw_u32_be_swap(rec->fileRecord.contentModDate);
+            (*d_out)->at = fsw_u32_be_swap(rec->fileRecord.accessDate);
+
+            (*d_out)->fd_type = fsw_u32_be_swap(rec->fileRecord.userInfo.fdType);
+            (*d_out)->fd_creator = fsw_u32_be_swap(rec->fileRecord.userInfo.fdCreator);
+
+            if (((*d_out)->fd_creator == kHFSPlusSymlinkCreator && (*d_out)->fd_type == kHFSPlusSymlinkType) ||
+                ((*d_out)->fd_creator == kHFSPlusHFSPlusCreator && (*d_out)->fd_type == kHFSPlusHardlinkType)) {
+
+                (*d_out)->g.type = FSW_DNODE_TYPE_SYMLINK;
+                (*d_out)->inode_num = fsw_u32_be_swap (rec->fileRecord.permissions.special.iNodeNum);
+            }
+            break;
+        default:
+            (*d_out)->ct = 0;
+            (*d_out)->mt = 0;
+            (*d_out)->at = 0;
+            break;
+    }
+
+    return status;
+}
+
 /* Lookup a directory's child dnode by name. This function is called on a
  * directory to retrieve the directory entry with the given name. A dnode
  * is constructed for this entry and returned. The core makes sure that
@@ -504,10 +623,10 @@ fsw_hfsplus_dir_get(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
                     struct fsw_string *name, struct fsw_hfsplus_dnode **d_out)
 {
     BTNodeDescriptor     *btnode;
-    fsw_u32              child_dno_id, child_dno_type;
     HFSPlusCatalogKey    sk, *tk;
     HFSPlusCatalogRecord *rec;
     fsw_status_t         status;
+    fsw_u32              rec_num;
     fsw_u32 i;
 
     // search catalog file for child named by 'name':
@@ -524,70 +643,22 @@ fsw_hfsplus_dir_get(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
 
     // pre-allocate bt-node buffer for use by search function:
     status = fsw_alloc(v->catf->bt_ndsz, &btnode);
-    if (status)
+    if (status) {
         return status;
+    }
 
     status = fsw_hfsplus_bt_search(v->catf,
-                                   (HFSPlusBTKey *)&sk, fsw_hfsplus_cat_cmp,
-                                   0,
-                                   btnode, (HFSPlusBTKey **)&tk);
-    if (status)
+                                   (HFSPlusBTKey *)&sk,
+                                   fsw_hfsplus_cat_cmp,
+                                   btnode,
+                                   &rec_num);
+    if (status) {
         goto done;
+    }
+
+    tk = (HFSPlusCatalogKey *)fsw_hfsplus_btnode_get_rec(btnode, v->catf->bt_ndsz, rec_num);
     rec = fsw_hfsplus_bt_rec_skip_key((HFSPlusBTKey *)tk);
-
-    // figure out type of child dnode:
-    switch (fsw_u16_be_swap(rec->recordType)) {
-    case kHFSPlusFolderRecord:
-        child_dno_id = fsw_u32_be_swap(rec->folderRecord.folderID);
-        child_dno_type = FSW_DNODE_TYPE_DIR;
-        break;
-    case kHFSPlusFileRecord:
-        child_dno_id = fsw_u32_be_swap(rec->fileRecord.fileID);
-        child_dno_type = FSW_DNODE_TYPE_FILE;
-        break;
-    default:
-        child_dno_id = 0;
-        child_dno_type = FSW_DNODE_TYPE_UNKNOWN;
-        break;
-    }
-
-    // allocate child dnode:
-    status = fsw_dnode_create(d, child_dno_id, child_dno_type, name, d_out);
-    if (status)
-        goto done;
-
-    // grab additional child dnode status data:
-    switch (child_dno_type) {
-    case FSW_DNODE_TYPE_DIR:
-        (*d_out)->ct = fsw_u32_be_swap(rec->folderRecord.createDate);
-        (*d_out)->mt = fsw_u32_be_swap(rec->folderRecord.contentModDate);
-        (*d_out)->at = fsw_u32_be_swap(rec->folderRecord.accessDate);
-        break;
-    case FSW_DNODE_TYPE_FILE:
-        (*d_out)->g.size =
-            fsw_u64_be_swap(rec->fileRecord.dataFork.logicalSize);
-        fsw_memcpy((*d_out)->extents, &rec->fileRecord.dataFork.extents,
-                   sizeof(HFSPlusExtentRecord));
-        (*d_out)->ct = fsw_u32_be_swap(rec->fileRecord.createDate);
-        (*d_out)->mt = fsw_u32_be_swap(rec->fileRecord.contentModDate);
-        (*d_out)->at = fsw_u32_be_swap(rec->fileRecord.accessDate);
-
-        (*d_out)->fd_type = fsw_u32_be_swap(rec->fileRecord.userInfo.fdType);
-        (*d_out)->fd_creator = fsw_u32_be_swap(rec->fileRecord.userInfo.fdCreator);
-
-        if (((*d_out)->fd_creator == kHFSPlusSymlinkCreator && (*d_out)->fd_type == kHFSPlusSymlinkType) ||
-            ((*d_out)->fd_creator == kHFSPlusHFSPlusCreator && (*d_out)->fd_type == kHFSPlusHardlinkType)) {
-
-            (*d_out)->g.type = FSW_DNODE_TYPE_SYMLINK;
-            (*d_out)->inode_num = fsw_u32_be_swap (rec->fileRecord.permissions.special.iNodeNum);
-        }
-        break;
-    default:
-        (*d_out)->ct = 0;
-        (*d_out)->mt = 0;
-        (*d_out)->at = 0;
-        break;
-    }
+    status = fsw_hfsplus_rec2dnode(rec, d, name, d_out);
 
 done:
     fsw_free(btnode);
@@ -605,21 +676,21 @@ static fsw_status_t
 fsw_hfsplus_dir_read(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
                      struct fsw_shandle *sh, struct fsw_hfsplus_dnode **d_out)
 {
-// FIXME: can we factor out common bits shared with dir_get() ?
     BTNodeDescriptor     *btnode;
-    fsw_u32              child_dno_id, child_dno_type;
     HFSPlusCatalogKey    sk, *tk;
     HFSPlusCatalogRecord *rec;
     struct fsw_string    name;
+    fsw_u32              rec_num;
     int                  i;
     fsw_status_t         status;
 
-    FSW_MSG_DEBUG((FSW_MSGSTR("FswHfsPlus: dir_read.1: sh->pos=%ld\n"), sh->pos));
+    FSW_MSG_DEBUG((FSW_MSGSTR("FswHfsPlus: dir_read.1: parent=%ld, sh->pos=%ld\n"), d->g.dnode_id, sh->pos));
 
     // pre-allocate bt-node buffer for use by search function:
     status = fsw_alloc(v->catf->bt_ndsz, &btnode);
-    if (status)
+    if (status) {
         return status;
+    }
 
     // search catalog file for first child of 'd' (a.k.a. "./"):
     sk.parentID = d->g.dnode_id;
@@ -628,100 +699,43 @@ fsw_hfsplus_dir_read(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
 
     sk.keyLength = sizeof(sk.parentID) + sizeof(sk.nodeName.length);
     status = fsw_hfsplus_bt_search(v->catf,
-                                   (HFSPlusBTKey *)&sk, fsw_hfsplus_cat_cmp,
-                                   sh->pos,
-                                   btnode, (HFSPlusBTKey **)&tk);
-    if (status)
-        goto done;
-    rec = fsw_hfsplus_bt_rec_skip_key((HFSPlusBTKey *)tk);
-
-    // did we exhaust all child dnodes of 'd'?
-    if (fsw_u32_be_swap(tk->parentID) != sk.parentID) {
-        status = FSW_NOT_FOUND;
+                                   (HFSPlusBTKey *)&sk,
+                                   fsw_hfsplus_cat_cmp,
+                                   btnode, &rec_num);
+    if (status) {
         goto done;
     }
 
-    // get child name
+    status = fsw_hfsplus_btree_get_rec(v->catf,
+                                     sk.parentID,
+                                     btnode,
+                                     &rec_num,
+                                     &sh->pos);
+    if (status) {
+        goto done;
+    }
+
+    tk = (HFSPlusCatalogKey *)fsw_hfsplus_btnode_get_rec(btnode, v->catf->bt_ndsz, rec_num);
+    rec = fsw_hfsplus_bt_rec_skip_key((HFSPlusBTKey *)tk);
+
+    // Fill child name
     name.type = FSW_STRING_TYPE_UTF16;
     name.len = fsw_u16_be_swap(tk->nodeName.length);
     name.size = name.len * 2;
     status = fsw_alloc(name.size, &name.data);
-    if (status)
+    if (status) {
         goto done;
-    for (i = 0; i < name.len; i++)
-        ((fsw_u16 *)name.data)[i] = fsw_u16_be_swap(tk->nodeName.unicode[i]);
-
-    // figure out type of child dnode:
-    switch (fsw_u16_be_swap(rec->recordType)) {
-    case kHFSPlusFolderRecord:
-        child_dno_id = fsw_u32_be_swap(rec->folderRecord.folderID);
-        child_dno_type = FSW_DNODE_TYPE_DIR;
-        break;
-    case kHFSPlusFileRecord:
-        child_dno_id = fsw_u32_be_swap(rec->fileRecord.fileID);
-        child_dno_type = FSW_DNODE_TYPE_FILE;
-        break;
-    case kHFSPlusFolderThreadRecord:
-        FSW_MSG_DEBUG((FSW_MSGSTR("FswHfsPlus: dir_read.3: folder thread: ")));
-
-        for (i = 0; i < fsw_u16_be_swap(rec->threadRecord.nodeName.length); i++)
-            FSW_MSG_DEBUG((FSW_MSGSTR("%с"), fsw_u16_be_swap(rec->threadRecord.nodeName.unicode[i])));
-        FSW_MSG_DEBUG((FSW_MSGSTR("\n")));
-        FSW_MSG_DEBUG((FSW_MSGSTR("FswHfsPlus: OldParentID=%d, NewParentID=%d\n"),
-                                  sk.parentID,
-                                  fsw_u32_be_swap(rec->threadRecord.parentID)));
-
-//        break;
-    default:
-        FSW_MSG_DEBUG((FSW_MSGSTR("FswHfsPlus: dir_read.2: recordType=%d\n"), fsw_u16_be_swap(rec->recordType)));
-        child_dno_id = 0;
-        child_dno_type = FSW_DNODE_TYPE_UNKNOWN;
-        break;
     }
 
-    // allocate child dnode:
-    status = fsw_dnode_create(d, child_dno_id, child_dno_type, &name, d_out);
-    if (status)
-        goto done;
+    FSW_MSG_DEBUG((FSW_MSGSTR("FswHfsPlus: dir_read.2: child name: ")));
+    for (i = 0; i < name.len; i++) {
+        ((fsw_u16 *) name.data)[i] = fsw_u16_be_swap(tk->nodeName.unicode[i]);
+        FSW_MSG_DEBUG((FSW_MSGSTR("%c"), ((fsw_u16 *) name.data)[i]));
+    }
+    FSW_MSG_DEBUG((FSW_MSGSTR("\n")));
 
-    // done with child name:
+    status = fsw_hfsplus_rec2dnode(rec, d, &name, d_out);
     fsw_strfree(&name);
-
-    // grab additional child dnode status data:
-    switch (child_dno_type) {
-    case FSW_DNODE_TYPE_DIR:
-        (*d_out)->ct = fsw_u32_be_swap(rec->folderRecord.createDate);
-        (*d_out)->mt = fsw_u32_be_swap(rec->folderRecord.contentModDate);
-        (*d_out)->at = fsw_u32_be_swap(rec->folderRecord.accessDate);
-        break;
-    case FSW_DNODE_TYPE_FILE:
-        (*d_out)->g.size =
-            fsw_u64_be_swap(rec->fileRecord.dataFork.logicalSize);
-        fsw_memcpy((*d_out)->extents, &rec->fileRecord.dataFork.extents,
-                   sizeof(HFSPlusExtentRecord));
-        (*d_out)->ct = fsw_u32_be_swap(rec->fileRecord.createDate);
-        (*d_out)->mt = fsw_u32_be_swap(rec->fileRecord.contentModDate);
-        (*d_out)->at = fsw_u32_be_swap(rec->fileRecord.accessDate);
-
-        (*d_out)->fd_type = fsw_u32_be_swap(rec->fileRecord.userInfo.fdType);
-        (*d_out)->fd_creator = fsw_u32_be_swap(rec->fileRecord.userInfo.fdCreator);
-
-        if (((*d_out)->fd_creator == kHFSPlusSymlinkCreator && (*d_out)->fd_type == kHFSPlusSymlinkType) ||
-            ((*d_out)->fd_creator == kHFSPlusHFSPlusCreator && (*d_out)->fd_type == kHFSPlusHardlinkType)) {
-
-            (*d_out)->g.type = FSW_DNODE_TYPE_SYMLINK;
-            (*d_out)->inode_num = fsw_u32_be_swap (rec->fileRecord.permissions.special.iNodeNum);
-        }
-        break;
-    default:
-        (*d_out)->ct = 0;
-        (*d_out)->mt = 0;
-        (*d_out)->at = 0;
-        break;
-    }
-
-    // advance caller's state to next directory entry:
-    sh->pos++;
 
 done:
     fsw_free(btnode);
