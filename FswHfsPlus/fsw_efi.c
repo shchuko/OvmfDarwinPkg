@@ -989,6 +989,7 @@ EFI_STATUS fsw_efi_dnode_fill_FileInfo(IN FSW_VOLUME_DATA *Volume,
     EFI_FILE_INFO       *FileInfo;
     UINTN               RequiredSize;
     struct fsw_dnode_stat sb;
+    struct fsw_dnode    *target_dno;
     
     // make sure the dnode has complete info
     Status = fsw_efi_map_status(fsw_dnode_fill(dno), Volume);
@@ -1012,6 +1013,25 @@ EFI_STATUS fsw_efi_dnode_fill_FileInfo(IN FSW_VOLUME_DATA *Volume,
     // fill structure
     ZeroMem(Buffer, RequiredSize);
     FileInfo = (EFI_FILE_INFO *)Buffer;
+
+    // copy name before symlink resolving
+    fsw_efi_strcpy(FileInfo->FileName, &dno->name);
+
+    // resolve symlink if needed
+    Status = fsw_efi_map_status (fsw_dnode_resolve (dno, &target_dno), Volume);
+    if (EFI_ERROR (Status))
+        return Status;
+
+    // make sure the dnode has complete info
+    Status = fsw_efi_map_status(fsw_dnode_fill(dno), Volume);
+    if (EFI_ERROR(Status)) {
+        fsw_dnode_release (target_dno);
+        return Status;
+    }
+
+    fsw_dnode_release(dno);
+    dno = target_dno;
+
     FileInfo->Size = RequiredSize;
     FileInfo->FileSize          = dno->size;
     FileInfo->Attribute         = 0;
