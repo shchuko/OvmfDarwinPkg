@@ -4,6 +4,7 @@
  */
 
 /*-
+ * Copyright (c) 2020 Vladislav Yaroshchuk <yaroshchuk2000@gmail.com>
  * Copyright (c) 2006 Christoph Pfisterer
  *
  * Redistribution and use in source and binary forms, with or without
@@ -77,9 +78,31 @@ fsw_status_t fsw_memdup(void **dest_out, void *src, int len)
 
 int fsw_strlen(struct fsw_string *s)
 {
-    if (s->type == FSW_STRING_TYPE_EMPTY)
+    if (s == NULL || s->type == FSW_STRING_TYPE_EMPTY)
         return 0;
     return s->len;
+}
+
+/**
+ * Get the size of a string in bytes.
+ */
+int fsw_strsize(struct fsw_string *s)
+{
+    if (s == NULL || s->type == FSW_STRING_TYPE_EMPTY)
+        return 0;
+
+    return s->size;
+}
+
+/**
+ * Get the data of a string.
+ */
+void *fsw_strdata(struct fsw_string *s)
+{
+    if (s == NULL || s->type == FSW_STRING_TYPE_EMPTY)
+        return NULL;
+
+    return (void *) s->data;
 }
 
 /**

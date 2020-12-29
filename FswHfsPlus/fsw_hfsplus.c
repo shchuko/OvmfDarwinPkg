@@ -1,6 +1,7 @@
 /** @file
   HFS+ file system driver.
 
+  Copyright (c) 2020, Vladislav Yaroshchuk <yaroshchuk2000@gmail.com>
   Copyright (C) 2017, Gabriel L. Somlo <gsomlo@gmail.com>
 
   This program and the accompanying materials are licensed and made
@@ -351,7 +352,7 @@ fsw_hfsplus_bt_search(struct fsw_hfsplus_dnode *bt,
 /* Compare unsigned integers 'a' and 'b';
  * Return -1/0/1 if 'a' is less/equal/greater than 'b'.
  */
-static int
+static int //__attribute__((unused))
 fsw_hfsplus_int_cmp(fsw_u32 a, fsw_u32 b)
 {
     return (a < b) ? -1 : (a > b) ? 1 : 0;
@@ -470,10 +471,28 @@ fsw_hfsplus_get_ext(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
     }
 
     // FIXME: more than 8 fragments not yet supported!
-DEBUG ((EFI_D_INFO, "GLS: get_ext: got here\n"));
+    FSW_MSG_ASSERT((FSW_MSGSTR("FswHfsPlus: get_ext: got_here\n")));
+
     return FSW_UNSUPPORTED;
 }
 
+static fsw_status_t
+fsw_hfsplus_fswstr2unistr(HFSUniStr255* t, struct fsw_string* src)
+{
+    fsw_status_t status;
+    struct fsw_string ws = FSW_STRING_INIT;
+
+    status = fsw_strdup_coerce(&ws, FSW_STRING_TYPE_UTF16, src);
+    if (status == FSW_SUCCESS) {
+        t->length = (fsw_u16) fsw_strlen(&ws);
+        if (t->length > 0) {
+            fsw_memcpy(t->unicode, fsw_strdata(&ws), fsw_strsize(&ws));
+        }
+    }
+
+    fsw_strfree (&ws);
+    return status;
+}
 
 /* Lookup a directory's child dnode by name. This function is called on a
  * directory to retrieve the directory entry with the given name. A dnode
@@ -489,29 +508,25 @@ fsw_hfsplus_dir_get(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
     HFSPlusCatalogKey    sk, *tk;
     HFSPlusCatalogRecord *rec;
     fsw_status_t         status;
+    fsw_u32 i;
 
-int i;
-DEBUG ((EFI_D_INFO, "GLS: dir_get: parent=%d name: ", d->g.dnode_id));
-for (i = 0; i < name->len; i++)
-  DEBUG((EFI_D_INFO, "%c", ((fsw_u16 *)name->data)[i]));
-DEBUG((EFI_D_INFO, "\n"));
-    // we only support FSW_STRING_TYPE_UTF16 names:
-    if (name->type != FSW_STRING_TYPE_UTF16 ||
-        name->size > sizeof(sk.nodeName.unicode))
-        return FSW_UNSUPPORTED;
+    // search catalog file for child named by 'name':
+    sk.parentID = d->g.dnode_id;
+    status = fsw_hfsplus_fswstr2unistr(&(sk.nodeName), name);
+
+    if (status)
+        return status;
+
+    FSW_MSG_DEBUG((FSW_MSGSTR("FswHfsPlus: dir_get: parent=%d name: "), d->g.dnode_id));
+    for (i = 0; i < sk.nodeName.length; i++)
+        FSW_MSG_DEBUG((FSW_MSGSTR("%c"), ((fsw_u16 *)sk.nodeName.unicode)[i]));
+    FSW_MSG_DEBUG((FSW_MSGSTR("\n")));
 
     // pre-allocate bt-node buffer for use by search function:
     status = fsw_alloc(v->catf->bt_ndsz, &btnode);
     if (status)
         return status;
 
-    // search catalog file for child named by 'name':
-    sk.parentID = d->g.dnode_id;
-    sk.nodeName.length = name->len;
-    fsw_memcpy(sk.nodeName.unicode, name->data, name->size);
-    // NOTE: keyLength not used in search, setting only for completeness:
-    sk.keyLength = sizeof(sk.parentID) +
-                   sizeof(sk.nodeName.length) + name->size;
     status = fsw_hfsplus_bt_search(v->catf,
                                    (HFSPlusBTKey *)&sk, fsw_hfsplus_cat_cmp,
                                    0,
@@ -556,6 +571,16 @@ DEBUG((EFI_D_INFO, "\n"));
         (*d_out)->ct = fsw_u32_be_swap(rec->fileRecord.createDate);
         (*d_out)->mt = fsw_u32_be_swap(rec->fileRecord.contentModDate);
         (*d_out)->at = fsw_u32_be_swap(rec->fileRecord.accessDate);
+
+        (*d_out)->fd_type = fsw_u32_be_swap(rec->fileRecord.userInfo.fdType);
+        (*d_out)->fd_creator = fsw_u32_be_swap(rec->fileRecord.userInfo.fdCreator);
+
+        if (((*d_out)->fd_creator == kHFSPlusSymlinkCreator && (*d_out)->fd_type == kHFSPlusSymlinkType) ||
+            ((*d_out)->fd_creator == kHFSPlusHFSPlusCreator && (*d_out)->fd_type == kHFSPlusHardlinkType)) {
+
+            (*d_out)->g.type = FSW_DNODE_TYPE_SYMLINK;
+            (*d_out)->inode_num = fsw_u32_be_swap (rec->fileRecord.permissions.special.iNodeNum);
+        }
         break;
     default:
         (*d_out)->ct = 0;
@@ -589,7 +614,8 @@ fsw_hfsplus_dir_read(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
     int                  i;
     fsw_status_t         status;
 
-DEBUG ((EFI_D_INFO, "GLS: dir_read.1: sh->pos=%ld\n", sh->pos));
+    FSW_MSG_DEBUG((FSW_MSGSTR("FswHfsPlus: dir_read.1: sh->pos=%ld\n"), sh->pos));
+
     // pre-allocate bt-node buffer for use by search function:
     status = fsw_alloc(v->catf->bt_ndsz, &btnode);
     if (status)
@@ -636,16 +662,18 @@ DEBUG ((EFI_D_INFO, "GLS: dir_read.1: sh->pos=%ld\n", sh->pos));
         child_dno_type = FSW_DNODE_TYPE_FILE;
         break;
     case kHFSPlusFolderThreadRecord:
-DEBUG ((EFI_D_INFO, "GLS: dir_read.3: folder thread: "));
-for (i = 0; i < fsw_u16_be_swap(rec->threadRecord.nodeName.length); i++)
-  DEBUG ((EFI_D_INFO, "%c", fsw_u16_be_swap(rec->threadRecord.nodeName.unicode[i])));
-DEBUG ((EFI_D_INFO, "\n"));
-DEBUG ((EFI_D_INFO, "GLS: OldParentID=%d, NewParentID=%d\n", sk.parentID,
-                    fsw_u32_be_swap(rec->threadRecord.parentID)));
+        FSW_MSG_DEBUG((FSW_MSGSTR("FswHfsPlus: dir_read.3: folder thread: ")));
+
+        for (i = 0; i < fsw_u16_be_swap(rec->threadRecord.nodeName.length); i++)
+            FSW_MSG_DEBUG((FSW_MSGSTR("%с"), fsw_u16_be_swap(rec->threadRecord.nodeName.unicode[i])));
+        FSW_MSG_DEBUG((FSW_MSGSTR("\n")));
+        FSW_MSG_DEBUG((FSW_MSGSTR("FswHfsPlus: OldParentID=%d, NewParentID=%d\n"),
+                                  sk.parentID,
+                                  fsw_u32_be_swap(rec->threadRecord.parentID)));
+
 //        break;
     default:
-DEBUG ((EFI_D_INFO, "GLS: dir_read.2: recordType=%d\n",
-                    fsw_u16_be_swap(rec->recordType)));
+        FSW_MSG_DEBUG((FSW_MSGSTR("FswHfsPlus: dir_read.2: recordType=%d\n"), fsw_u16_be_swap(rec->recordType)));
         child_dno_id = 0;
         child_dno_type = FSW_DNODE_TYPE_UNKNOWN;
         break;
@@ -674,6 +702,16 @@ DEBUG ((EFI_D_INFO, "GLS: dir_read.2: recordType=%d\n",
         (*d_out)->ct = fsw_u32_be_swap(rec->fileRecord.createDate);
         (*d_out)->mt = fsw_u32_be_swap(rec->fileRecord.contentModDate);
         (*d_out)->at = fsw_u32_be_swap(rec->fileRecord.accessDate);
+
+        (*d_out)->fd_type = fsw_u32_be_swap(rec->fileRecord.userInfo.fdType);
+        (*d_out)->fd_creator = fsw_u32_be_swap(rec->fileRecord.userInfo.fdCreator);
+
+        if (((*d_out)->fd_creator == kHFSPlusSymlinkCreator && (*d_out)->fd_type == kHFSPlusSymlinkType) ||
+            ((*d_out)->fd_creator == kHFSPlusHFSPlusCreator && (*d_out)->fd_type == kHFSPlusHardlinkType)) {
+
+            (*d_out)->g.type = FSW_DNODE_TYPE_SYMLINK;
+            (*d_out)->inode_num = fsw_u32_be_swap (rec->fileRecord.permissions.special.iNodeNum);
+        }
         break;
     default:
         (*d_out)->ct = 0;
@@ -690,6 +728,79 @@ done:
     return status;
 }
 
+/**
+ * Convert fsw_u32 to string (char[]). Memory will be allocated depending on the string length required
+ * @param num Source number
+ * @param dest Destination array
+ * @param len Destination string length
+ * @return FSW_OUT_OF_MEMORY on fsw_alloc() errored, else FSW_SUCCESS
+ */
+static
+fsw_status_t fsw_hfsplus_itoa(fsw_u32 num, char** dest, int* len)
+{
+    fsw_status_t status;
+    int i, j;
+    int num_copy;
+    char c;
+
+    (*len) = 0;
+
+    // Pre-calculating string length
+    num_copy = num;
+    do {
+        ++(*len);
+    } while ((num_copy /= 10) > 0);
+
+    // Allocating memory for the string
+    status = fsw_alloc_zero(sizeof(char) * (*len), (void **) dest);
+    if (status) {
+        return status;
+    }
+
+    // Converting
+    i = 0;
+    do {
+        (*dest)[i++] = num % 10 + '0';
+    } while ((num /= 10) > 0);
+
+    // Reversing the string
+    for (i = 0, j = *len - 1; i < j; i++, j--) {
+        c = (*dest)[i];
+        (*dest)[i] = (*dest)[j];
+        (*dest)[j] = c;
+    }
+    return status;
+}
+
+/**
+ * Concatenate two strings
+ * @param s1 First string
+ * @param len1 First string length
+ * @param s2 Second string
+ * @param len2 Second string length
+ * @param dest Destination buffer
+ * @return FSW_OUT_OF_MEMORY on fsw_alloc() errored, else FSW_SUCCESS
+ */
+static
+fsw_status_t fsw_hfsplus_sconcat(const char *const s1, int len1, const char *const s2, int len2, char **dest) {
+    int i;
+    fsw_status_t status;
+
+    status = fsw_alloc_zero(sizeof(char) * (len1 + len2), (void **) dest);
+    if (status) {
+        return status;
+    }
+
+    for (i = 0; i < len1; ++i) {
+        (*dest)[i] = s1[i];
+    }
+
+    for (i = 0; i < len2; ++i) {
+        (*dest)[i + len1] = s2[i];
+    }
+    return status;
+}
+
 /* Get the target path of a symbolic link. This function is called when a
  * symbolic link needs to be resolved. The core makes sure that the
  * fsw_hfsplus_dno_fill has been called on the dnode and that it really is a
@@ -699,8 +810,38 @@ static fsw_status_t
 fsw_hfsplus_readlink(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
                      struct fsw_string *lnk_tgt)
 {
-    // FIXME: not yet supported!
-DEBUG ((EFI_D_INFO, "GLS: readlink: got here\n"));
+    // Note:
+    //   We assume the size = length * sizeof(char)
+    //   And NO strings are null-terminated
+
+    static const char hlink_prefix[] = "/\0\0\0\0HFS+ Private Data/iNode";
+    static const int hlink_prefix_len = 28;
+
+    fsw_status_t status;
+    char *buf;
+    int buf_len;
+
+    if(d->fd_creator == kHFSPlusHFSPlusCreator && d->fd_type == kHFSPlusHardlinkType) {
+        status = fsw_hfsplus_itoa(d->inode_num, &buf, &buf_len);
+        if (status) {
+            return status;
+        }
+
+        status = fsw_hfsplus_sconcat(hlink_prefix, hlink_prefix_len, buf, buf_len, (char**) &lnk_tgt->data);
+        if (status) {
+            return status;
+        }
+
+        lnk_tgt->type = FSW_STRING_TYPE_ISO88591;
+        lnk_tgt->size = (hlink_prefix_len + buf_len) * sizeof(char);
+        lnk_tgt->len = hlink_prefix_len + buf_len;
+        fsw_free(buf);
+
+        FSW_MSG_DEBUG((FSW_MSGSTR("FswHfsPlus: readlink: inode no: %d\n"), d->g.dnode_id));
+        return FSW_SUCCESS;
+    } else if (d->fd_creator == kHFSPlusSymlinkCreator && d->fd_type == kHFSPlusSymlinkType) {
+        return fsw_dnode_readlink_data(d, lnk_tgt);
+    }
     return FSW_UNSUPPORTED;
 }
 

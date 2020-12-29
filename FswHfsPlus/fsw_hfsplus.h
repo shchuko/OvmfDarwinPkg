@@ -1,6 +1,7 @@
 /** @file
   HFS+ file system driver header.
 
+  Copyright (c) 2020, Vladislav Yaroshchuk <yaroshchuk2000@gmail.com>
   Copyright (C) 2017, Gabriel L. Somlo <gsomlo@gmail.com>
 
   This program and the accompanying materials are licensed and made
@@ -18,6 +19,10 @@
 
 #define VOLSTRUCTNAME fsw_hfsplus_volume
 #define DNODESTRUCTNAME fsw_hfsplus_dnode
+
+/* Let debug messages be printed */
+//#define FSW_DEBUG_LEVEL 2
+
 #include "fsw_core.h"
 
 /*============= HFS+ constants and data types from Apple TN1150 =============*/
@@ -43,6 +48,12 @@
 #define kHFSPlusFileRecord         2 // catalog file record type
 #define kHFSPlusFolderThreadRecord 3 // catalog folder thread record type
 #define kHFSPlusFileThreadRecord   4 // catalog file thread record type
+
+#define kHFSPlusHFSPlusCreator     0x6866732B // 'hfs+'
+#define kHFSPlusSymlinkCreator     0x72686170 //'rhap'
+
+#define kHFSPlusHardlinkType       0x686C6E6B // 'hlnk'
+#define kHFSPlusSymlinkType        0x736C6E6B // 'slnk'
 
 #define kBTLeafNode               -1 // B-Tree leaf node type
 #define kBTIndexNode               0 // B-Tree index node type
@@ -117,8 +128,34 @@ typedef struct {
 
 // finder info types
 typedef struct {
+    fsw_u32 	fdType;		// file type
+    fsw_u32 	fdCreator;	// file creator
+    fsw_u16 	fdFlags;	// Finder flags
+    struct {
+        fsw_u16	v;		// file's location
+        fsw_u16	h;
+    } fdLocation;
+    fsw_u16 	opaque;
+} FndrFileInfo;
+
+typedef struct {
+    struct {			// folder's window rectangle
+        fsw_u16	top;
+        fsw_u16	left;
+        fsw_u16	bottom;
+        fsw_u16	right;
+    } frRect;
+    unsigned short 	frFlags;	// Finder flags
+    struct {
+        fsw_u16	v;		// folder's location
+        fsw_u16	h;
+    } frLocation;
+    fsw_u16 	opaque;
+} FndrDirInfo;
+
+typedef struct {
     fsw_u8 opaque[16];
-} FndrFileInfo, FndrDirInfo, FndrOpaqueInfo;
+} FndrOpaqueInfo;
 
 // catalog folder record type
 typedef struct {
@@ -237,6 +274,11 @@ struct fsw_hfsplus_dnode {
     HFSPlusExtentRecord extents;    // HFS+ initial extent record
     fsw_u32 bt_root;                // root node index (if B-Tree file)
     fsw_u16 bt_ndsz;                // node size (if B-Tree file)
+
+    // Links stuff
+    fsw_u32 fd_creator;
+    fsw_u32 fd_type;
+    fsw_u32 inode_num;
 };
 
 

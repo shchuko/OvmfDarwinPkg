@@ -4,6 +4,7 @@
  */
 
 /*-
+ * Copyright (c) 2020 Vladislav Yaroshchuk <yaroshchuk2000@gmail.com>
  * Copyright (c) 2006 Christoph Pfisterer
  * Portions Copyright (c) The Regents of the University of California.
  * Portions Copyright (c) UNIX System Laboratories, Inc.
@@ -449,6 +450,8 @@ fsw_status_t fsw_memdup(void **dest_out, void *src, int len);
 /*@{*/
 
 int          fsw_strlen(struct fsw_string *s);
+int          fsw_strsize(struct fsw_string *s);
+void         *fsw_strdata(struct fsw_string *s);
 int          fsw_streq(struct fsw_string *s1, struct fsw_string *s2);
 int          fsw_streq_cstr(struct fsw_string *s1, const char *s2);
 fsw_status_t fsw_strdup_coerce(struct fsw_string *dest, int type, struct fsw_string *src);
