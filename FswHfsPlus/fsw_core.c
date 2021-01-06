@@ -1041,8 +1041,6 @@ fsw_status_t fsw_get_bless_info(struct fsw_volume *vol, int type, struct fsw_str
     if (status) {
         return status;
     }
-// FIXME check is necessary to release dnode here
-//    fsw_dnode_release(dnode);
 
     status = fsw_dnode_get_path(vol, dnode, out_path);
     return status;

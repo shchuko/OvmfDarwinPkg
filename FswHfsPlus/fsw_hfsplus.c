@@ -16,6 +16,143 @@
 
 #include "fsw_hfsplus.h"
 
+// --------------------------------------------------------
+// HFS+ FSW Methods declaration
+//
+
+/* Mount an HFS+ volume. Read volume header (equivalent of superblock),
+ * and set up dnodes for the root folder and B-Tree file(s).
+ * Return FSW_SUCCESS or error code.
+ */
+static fsw_status_t
+fsw_hfsplus_vol_mount(struct fsw_hfsplus_volume *v);
+
+/* Free the volume data structure. Called by the core after an unmount or
+ * unsuccessful mount, to release the memory used by the file system type
+ * specific part of the volume structure.
+ */
+static void
+fsw_hfsplus_vol_free(struct fsw_hfsplus_volume *v);
+
+/* Get in-depth information on a volume.
+ */
+static fsw_status_t
+fsw_hfsplus_vol_stat(struct fsw_hfsplus_volume *v, struct fsw_volume_stat *s);
+
+/* Get full information on a dnode from disk. This function is called by
+ * the core whenever it needs to access fields in the dnode structure that
+ * may not be filled immediately upon creation of the dnode.
+ */
+static fsw_status_t
+fsw_hfsplus_dno_fill(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d);
+
+/* Free the dnode data structure. Called by the core when deallocating a dnode
+ * structure to release the memory used by the file system type specific part
+ * of the dnode structure.
+ */
+static void
+fsw_hfsplus_dno_free(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d);
+
+/* Get in-depth dnode information. The core ensures fsw_hfsplus_dno_fill()
+ * has been called on the dnode before this function is called. Note that some
+ * data is not directly stored into the structure, but passed to a host-specific
+ * callback that converts it to the host-specific format.
+ */
+static fsw_status_t
+fsw_hfsplus_dno_stat(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
+                     struct fsw_dnode_stat *s);
+
+/* Retrieve file data mapping information. This function is called by
+ * the core when fsw_shandle_read needs to know where on the disk the
+ * required piece of the file's data can be found. The core makes sure
+ * that fsw_hfsplus_dno_fill has been called on the dnode before.
+ * Our task here is to get the physical disk block number for the
+ * requested logical block number.
+ * NOTE: logical and physical block sizes are the same (see mount method).
+ */
+static fsw_status_t
+fsw_hfsplus_get_ext(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
+                    struct fsw_extent *e);
+
+
+/* Lookup a directory's child dnode by name. This function is called on a
+ * directory to retrieve the directory entry with the given name. A dnode
+ * is constructed for this entry and returned. The core makes sure that
+ * fsw_hfsplus_dno_fill has been called and the dnode is actually a directory.
+ */
+static fsw_status_t
+fsw_hfsplus_dir_get(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
+                    struct fsw_string *name, struct fsw_hfsplus_dnode **d_out);
+
+/* Get the next directory entry when reading a directory. This function is
+ * called during directory iteration to retrieve the next directory entry.
+ * A dnode is constructed for the entry and returned. The core makes sure
+ * that fsw_hfsplus_dno_fill has been called and the dnode is actually a
+ * directory. The shandle provided by the caller is used to record the
+ * position in the directory between calls.
+ */
+static fsw_status_t
+fsw_hfsplus_dir_read(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
+                     struct fsw_shandle *sh, struct fsw_hfsplus_dnode **d_out);
+
+/* Get the target path of a symbolic link. This function is called when a
+ * symbolic link needs to be resolved. The core makes sure that the
+ * fsw_hfsplus_dno_fill has been called on the dnode and that it really is a
+ * symlink.
+ */
+static fsw_status_t
+fsw_hfsplus_readlink(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
+                     struct fsw_string *lnk_tgt);
+/**
+ * Get dnode associated with the given bless type
+ * @param vol volume
+ * @param bless_type bless type
+ * @param dno_out resulting dnode
+ * @return FSW_SUCCESS on success
+ */
+static fsw_status_t
+fsw_hfsplus_get_bless_info(struct fsw_hfsplus_volume *vol, /* in */
+                           fsw_u32 bless_type, /* in */
+                           struct fsw_hfsplus_dnode **dno_out /* out */);
+
+/**
+ * HFS+ FSW Method Dispatch Table
+ */
+struct fsw_fstype_table FSW_FSTYPE_TABLE_NAME(hfsplus) = {
+        { FSW_STRING_TYPE_ISO88591, 4, 4, "hfsplus" },
+        sizeof(struct fsw_hfsplus_volume), sizeof(struct fsw_hfsplus_dnode),
+        fsw_hfsplus_vol_mount, fsw_hfsplus_vol_free, fsw_hfsplus_vol_stat,
+        fsw_hfsplus_dno_fill, fsw_hfsplus_dno_free, fsw_hfsplus_dno_stat,
+        fsw_hfsplus_get_ext, fsw_hfsplus_dir_get, fsw_hfsplus_dir_read,
+        fsw_hfsplus_readlink, fsw_hfsplus_get_bless_info
+};
+
+// -------------------------------------------------------------------
+// Other declarations
+
+/* Given dnode 'd' and offset 'pos' into the data file it represents,
+ * retrieve 'len' bytes of data into buffer 'buf';
+ * Return FSW_SUCCESS or error code.
+ */
+static fsw_status_t
+fsw_hfsplus_read(struct fsw_hfsplus_dnode *d, fsw_u64 pos,
+                 fsw_u32 len, void *buf);
+
+/* Given the volume being mounted ('v'), and the ID & fork data of the B-Tree
+ * file being set up ('dn_id' and 'f', respectively), populate a cached,
+ * in-memory record of the B-Tree file at the location pointed to by 'btp';
+ * Return FSW_SUCCESS or error code.
+ */
+static fsw_status_t
+fsw_hfsplus_btf_setup(struct fsw_hfsplus_volume *v,
+                      fsw_u32 dn_id, HFSPlusForkData *f,
+                      struct fsw_hfsplus_dnode **btp);
+
+/* HFS+ to Posix timestamp conversion
+ */
+static fsw_u32
+fsw_hfsplus_posix_time(fsw_u32 t);
+
 /* Given a B-Tree node pointed to by 'btnode', with node size 'size',
  * locate the record given by its record number 'rnum';
  * Return a pointer to the B-Tree key at the beginning of the record.
@@ -29,6 +166,12 @@ fsw_hfsplus_btnode_get_rec(BTNodeDescriptor* btnode, fsw_u16 size, fsw_u16 rnum)
  */
 static void *
 fsw_hfsplus_bt_rec_skip_key(HFSPlusBTKey *k);
+
+/* Return the child node number immediately following the key record 'k' of
+ * an index node
+ */
+static fsw_u32
+fsw_hfsplus_bt_idx_get_child(HFSPlusBTKey *k);
 
 /**
  * Create minimal dnode that will be complete in future with fsw_hfsplus_dnode_complete() call.
@@ -104,9 +247,6 @@ static fsw_status_t
 fsw_hfsplus_fswstr2unistr(HFSUniStr255* t /* out */,
                           struct fsw_string* src /* in */);
 
-/* key comparison procedure type */
-typedef int (*k_cmp_t)(HFSPlusBTKey*, HFSPlusBTKey*);
-
 /* Search an HFS+ special file's B-Tree (given by 'bt'), for a search key
  * matching 'sk', using comparison procedure 'k_cmp' to determine when a key
  * match occurs;
@@ -136,7 +276,18 @@ fsw_hfsplus_bt_search(struct fsw_hfsplus_dnode *bt, /* in */
                       k_cmp_t k_cmp, /* in */
                       BTNodeDescriptor *btnode, /* out */
                       fsw_u32 *rec_num /* out */);
-                      
+
+/* Compare unsigned integers 'a' and 'b';
+ * Return -1/0/1 if 'a' is less/equal/greater than 'b'.
+ */
+static int
+fsw_hfsplus_int_cmp(fsw_u32 a, fsw_u32 b);
+
+/* Basic latin unicode lowercase
+ */
+static fsw_u16
+fsw_hfsplus_ucblatin_tolower(fsw_u16 c);
+
 /**
  * Iterate B-Tree records searching for `rec_skip` node starting from `rec_num` record of `btnode`
  * @param bt B-Tree root
@@ -207,23 +358,30 @@ fsw_hfsplus_bless_type2dnid(struct fsw_hfsplus_volume *vol, /* in */
                             fsw_u32 *dnid /* out */);
 
 /**
- * Get dnode associated with the given bless type
- * @param vol volume
- * @param bless_type bless type
- * @param dno_out resulting dnode
- * @return FSW_SUCCESS on success
+ * Convert fsw_u32 to string (char[]). Memory will be allocated depending on the string length required
+ * @param num Source number
+ * @param dest Destination array
+ * @param len Destination string length
+ * @return FSW_OUT_OF_MEMORY on fsw_alloc() errored, else FSW_SUCCESS
  */
-static
-fsw_status_t
-fsw_hfsplus_get_bless_info(struct fsw_hfsplus_volume *vol, /* in */
-                           fsw_u32 bless_type, /* in */
-                           struct fsw_hfsplus_dnode **dno_out /* out */);
+static fsw_status_t
+fsw_hfsplus_itoa(fsw_u32 num, char** dest, int* len);
+
+/**
+ * Concatenate two strings
+ * @param s1 First string
+ * @param len1 First string length
+ * @param s2 Second string
+ * @param len2 Second string length
+ * @param dest Destination buffer
+ * @return FSW_OUT_OF_MEMORY on fsw_alloc() errored, else FSW_SUCCESS
+ */
+static fsw_status_t
+fsw_hfsplus_sconcat(const char *const s1, int len1, const char *const s2, int len2, char **dest);
+
+// ---------------------------------------------------------------------
 
 
-/* Given dnode 'd' and offset 'pos' into the data file it represents,
- * retrieve 'len' bytes of data into buffer 'buf';
- * Return FSW_SUCCESS or error code.
- */
 static fsw_status_t
 fsw_hfsplus_read(struct fsw_hfsplus_dnode *d, fsw_u64 pos,
                  fsw_u32 len, void *buf)
@@ -246,11 +404,6 @@ fsw_hfsplus_read(struct fsw_hfsplus_dnode *d, fsw_u64 pos,
     return status;
 }
 
-/* Given the volume being mounted ('v'), and the ID & fork data of the B-Tree
- * file being set up ('dn_id' and 'f', respectively), populate a cached,
- * in-memory record of the B-Tree file at the location pointed to by 'btp';
- * Return FSW_SUCCESS or error code.
- */
 static fsw_status_t
 fsw_hfsplus_btf_setup(struct fsw_hfsplus_volume *v,
                       fsw_u32 dn_id, HFSPlusForkData *f,
@@ -279,10 +432,6 @@ fsw_hfsplus_btf_setup(struct fsw_hfsplus_volume *v,
     return FSW_SUCCESS;
 }
 
-/* Mount an HFS+ volume. Read volume header (equivalent of superblock),
- * and set up dnodes for the root folder and B-Tree file(s).
- * Return FSW_SUCCESS or error code.
- */
 static fsw_status_t
 fsw_hfsplus_vol_mount(struct fsw_hfsplus_volume *v)
 {
@@ -325,10 +474,6 @@ fsw_hfsplus_vol_mount(struct fsw_hfsplus_volume *v)
     return FSW_SUCCESS;
 }
 
-/* Free the volume data structure. Called by the core after an unmount or
- * unsuccessful mount, to release the memory used by the file system type
- * specific part of the volume structure.
- */
 static void
 fsw_hfsplus_vol_free(struct fsw_hfsplus_volume *v)
 {
@@ -338,8 +483,6 @@ fsw_hfsplus_vol_free(struct fsw_hfsplus_volume *v)
         fsw_dnode_release((struct fsw_dnode *)v->catf);
 }
 
-/* Get in-depth information on a volume.
- */
 static fsw_status_t
 fsw_hfsplus_vol_stat(struct fsw_hfsplus_volume *v, struct fsw_volume_stat *s)
 {
@@ -351,10 +494,6 @@ fsw_hfsplus_vol_stat(struct fsw_hfsplus_volume *v, struct fsw_volume_stat *s)
     return FSW_SUCCESS;
 }
 
-/* Get full information on a dnode from disk. This function is called by
- * the core whenever it needs to access fields in the dnode structure that
- * may not be filled immediately upon creation of the dnode.
- */
 static fsw_status_t
 fsw_hfsplus_dno_fill(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d)
 {
@@ -398,10 +537,6 @@ done:
     return status;
 }
 
-/* Free the dnode data structure. Called by the core when deallocating a dnode
- * structure to release the memory used by the file system type specific part
- * of the dnode structure.
- */
 static void
 fsw_hfsplus_dno_free(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d)
 {
@@ -409,8 +544,6 @@ fsw_hfsplus_dno_free(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d)
     return;
 }
 
-/* HFS+ to Posix timestamp conversion
- */
 static fsw_u32
 fsw_hfsplus_posix_time(fsw_u32 t)
 {
@@ -418,11 +551,6 @@ fsw_hfsplus_posix_time(fsw_u32 t)
     return (t > 2082844800) ? t - 2082844800 : 0;
 }
 
-/* Get in-depth dnode information. The core ensures fsw_hfsplus_dno_fill()
- * has been called on the dnode before this function is called. Note that some
- * data is not directly stored into the structure, but passed to a host-specific
- * callback that converts it to the host-specific format.
- */
 static fsw_status_t
 fsw_hfsplus_dno_stat(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
                      struct fsw_dnode_stat *s)
@@ -449,9 +577,6 @@ fsw_hfsplus_bt_rec_skip_key(HFSPlusBTKey *k)
     return (void *)k + sizeof(k->keyLength) + fsw_u16_be_swap(k->keyLength);
 }
 
-/* Return the child node number immediately following the key record 'k' of
- * an index node
- */
 static fsw_u32
 fsw_hfsplus_bt_idx_get_child(HFSPlusBTKey *k)
 {
@@ -528,17 +653,12 @@ fsw_hfsplus_bt_search(struct fsw_hfsplus_dnode *bt,
 }
 
 
-/* Compare unsigned integers 'a' and 'b';
- * Return -1/0/1 if 'a' is less/equal/greater than 'b'.
- */
 static int
 fsw_hfsplus_int_cmp(fsw_u32 a, fsw_u32 b)
 {
     return (a < b) ? -1 : (a > b) ? 1 : 0;
 }
 
-/* Basic latin unicode lowercase
- */
 static fsw_u16
 fsw_hfsplus_ucblatin_tolower(fsw_u16 c)
 {
@@ -554,9 +674,9 @@ static int
 fsw_hfsplus_thread_cmp(HFSPlusBTKey *tk, HFSPlusBTKey *sk)
 {
     int ret;
-    /// NOTE: all 'tk' fields are stored as big-endian values and must be
-    /// converted to CPU endianness before any comparison to corresponding
-    /// fields in 'sk'.
+    // NOTE: all 'tk' fields are stored as big-endian values and must be
+    // converted to CPU endianness before any comparison to corresponding
+    // fields in 'sk'.
 
     // Here is enough to compare parent's IDs and
     // check if the name is an empty string
@@ -580,9 +700,9 @@ fsw_hfsplus_cat_cmp(HFSPlusBTKey *tk, HFSPlusBTKey *sk)
     fsw_u16 t_char, s_char;
     int ret;
 
-    /// NOTE: all 'tk' fields are stored as big-endian values and must be
-    /// converted to CPU endianness before any comparison to corresponding
-    /// fields in 'sk'.
+    // NOTE: all 'tk' fields are stored as big-endian values and must be
+    // converted to CPU endianness before any comparison to corresponding
+    // fields in 'sk'.
 
     // compare parent IDs: if unequal, we're done!
     ret = fsw_hfsplus_int_cmp(fsw_u32_be_swap(tk->catKey.parentID),
@@ -623,14 +743,6 @@ fsw_hfsplus_cat_cmp(HFSPlusBTKey *tk, HFSPlusBTKey *sk)
     return ret;
 }
 
-/* Retrieve file data mapping information. This function is called by
- * the core when fsw_shandle_read needs to know where on the disk the
- * required piece of the file's data can be found. The core makes sure
- * that fsw_hfsplus_dno_fill has been called on the dnode before.
- * Our task here is to get the physical disk block number for the
- * requested logical block number.
- * NOTE: logical and physical block sizes are the same (see mount method).
- */
 static fsw_status_t
 fsw_hfsplus_get_ext(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
                     struct fsw_extent *e)
@@ -695,7 +807,8 @@ fsw_hfsplus_btree_get_rec(struct fsw_hfsplus_dnode *bt,
                         fsw_u32 parent_id,
                         BTNodeDescriptor *btnode,
                         fsw_u32 *rec_num,
-                        fsw_u64 *rec_skip) {
+                        fsw_u64 *rec_skip)
+{
     fsw_status_t            status;
     fsw_u32                 btnode_next;
     fsw_u32                 num_records;
@@ -757,7 +870,8 @@ fsw_hfsplus_dnode_create_minimal(struct fsw_hfsplus_volume *v,
                                  fsw_u32 parent_id,
                                  fsw_u32 dnode_id,
                                  struct fsw_string *name,
-                                 struct fsw_hfsplus_dnode **d_out) {
+                                 struct fsw_hfsplus_dnode **d_out)
+{
     fsw_status_t status;
 
     status = fsw_dnode_create(v, NULL, dnode_id, FSW_DNODE_TYPE_UNKNOWN, name, d_out);
@@ -770,7 +884,8 @@ fsw_hfsplus_dnode_create_minimal(struct fsw_hfsplus_volume *v,
 static void
 fsw_hfsplus_dnode_complete(HFSPlusCatalogRecord *rec,
                        struct fsw_hfsplus_dnode *parent,
-                       struct fsw_hfsplus_dnode *d_out) {
+                       struct fsw_hfsplus_dnode *d_out)
+{
 
     // figure out type of child dnode:
     switch (fsw_u16_be_swap(rec->recordType)) {
@@ -823,7 +938,8 @@ static fsw_status_t
 fsw_hfsplus_dnode_create_full(HFSPlusCatalogRecord *rec,
                               struct fsw_hfsplus_dnode *parent,
                               struct fsw_string *name,
-                              struct fsw_hfsplus_dnode **d_out) {
+                              struct fsw_hfsplus_dnode **d_out)
+{
     fsw_status_t    status;
     fsw_u32         dnid;
 
@@ -847,11 +963,6 @@ fsw_hfsplus_dnode_create_full(HFSPlusCatalogRecord *rec,
     return status;
 }
 
-/* Lookup a directory's child dnode by name. This function is called on a
- * directory to retrieve the directory entry with the given name. A dnode
- * is constructed for this entry and returned. The core makes sure that
- * fsw_hfsplus_dno_fill has been called and the dnode is actually a directory.
- */
 static fsw_status_t
 fsw_hfsplus_dir_get(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
                     struct fsw_string *name, struct fsw_hfsplus_dnode **d_out)
@@ -899,13 +1010,6 @@ done:
     return status;
 }
 
-/* Get the next directory entry when reading a directory. This function is
- * called during directory iteration to retrieve the next directory entry.
- * A dnode is constructed for the entry and returned. The core makes sure
- * that fsw_hfsplus_dno_fill has been called and the dnode is actually a
- * directory. The shandle provided by the caller is used to record the
- * position in the directory between calls.
- */
 static fsw_status_t
 fsw_hfsplus_dir_read(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
                      struct fsw_shandle *sh, struct fsw_hfsplus_dnode **d_out)
@@ -976,15 +1080,8 @@ done:
     return status;
 }
 
-/**
- * Convert fsw_u32 to string (char[]). Memory will be allocated depending on the string length required
- * @param num Source number
- * @param dest Destination array
- * @param len Destination string length
- * @return FSW_OUT_OF_MEMORY on fsw_alloc() errored, else FSW_SUCCESS
- */
-static
-fsw_status_t fsw_hfsplus_itoa(fsw_u32 num, char** dest, int* len)
+static fsw_status_t
+fsw_hfsplus_itoa(fsw_u32 num, char** dest, int* len)
 {
     fsw_status_t status;
     int i, j;
@@ -1020,17 +1117,9 @@ fsw_status_t fsw_hfsplus_itoa(fsw_u32 num, char** dest, int* len)
     return status;
 }
 
-/**
- * Concatenate two strings
- * @param s1 First string
- * @param len1 First string length
- * @param s2 Second string
- * @param len2 Second string length
- * @param dest Destination buffer
- * @return FSW_OUT_OF_MEMORY on fsw_alloc() errored, else FSW_SUCCESS
- */
-static
-fsw_status_t fsw_hfsplus_sconcat(const char *const s1, int len1, const char *const s2, int len2, char **dest) {
+static fsw_status_t
+fsw_hfsplus_sconcat(const char *const s1, int len1, const char *const s2, int len2, char **dest)
+{
     int i;
     fsw_status_t status;
 
@@ -1049,11 +1138,6 @@ fsw_status_t fsw_hfsplus_sconcat(const char *const s1, int len1, const char *con
     return status;
 }
 
-/* Get the target path of a symbolic link. This function is called when a
- * symbolic link needs to be resolved. The core makes sure that the
- * fsw_hfsplus_dno_fill has been called on the dnode and that it really is a
- * symlink.
- */
 static fsw_status_t
 fsw_hfsplus_readlink(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
                      struct fsw_string *lnk_tgt)
@@ -1094,7 +1178,9 @@ fsw_hfsplus_readlink(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
 }
 
 static fsw_status_t
-fsw_hfsplus_dnid2thread(struct fsw_hfsplus_volume *v, fsw_u32 dnid, BTNodeDescriptor *btnode, HFSPlusCatalogThread **thread_out) {
+fsw_hfsplus_dnid2thread(struct fsw_hfsplus_volume *v, fsw_u32 dnid,
+        BTNodeDescriptor *btnode, HFSPlusCatalogThread **thread_out)
+{
     fsw_status_t            status;
     HFSPlusCatalogKey       sk, *tk;
     fsw_u32_be              rec_num;
@@ -1115,7 +1201,9 @@ fsw_hfsplus_dnid2thread(struct fsw_hfsplus_volume *v, fsw_u32 dnid, BTNodeDescri
 }
 
 static fsw_status_t
-fsw_hfsplus_thread2dnode(struct fsw_hfsplus_volume *v, HFSPlusCatalogThread *thread, BTNodeDescriptor *btnode, struct fsw_hfsplus_dnode **d_out) {
+fsw_hfsplus_thread2dnode(struct fsw_hfsplus_volume *v, HFSPlusCatalogThread *thread,
+        BTNodeDescriptor *btnode, struct fsw_hfsplus_dnode **d_out)
+{
     fsw_status_t            status;
     struct fsw_string       name;
     fsw_u32                 rec_num;
@@ -1171,7 +1259,8 @@ fsw_hfsplus_thread2dnode(struct fsw_hfsplus_volume *v, HFSPlusCatalogThread *thr
 }
 
 static fsw_status_t
-fsw_hfsplus_dnid2dnode(struct fsw_hfsplus_volume *v, fsw_u32 dnid, struct fsw_hfsplus_dnode **d_out) {
+fsw_hfsplus_dnid2dnode(struct fsw_hfsplus_volume *v, fsw_u32 dnid, struct fsw_hfsplus_dnode **d_out)
+{
     fsw_status_t status;
     BTNodeDescriptor *btnode_thread, *btnode_dnode;
     HFSPlusCatalogThread *thread;
@@ -1205,7 +1294,8 @@ free_btnode_thread:
 static fsw_status_t 
 fsw_hfsplus_bless_type2dnid(struct fsw_hfsplus_volume *vol,
                                         fsw_u32 bless_type,
-                                        fsw_u32 *dnid) {
+                                        fsw_u32 *dnid)
+{
     HFSPlusVolumeFinderInfo     *finderInfo;
 
     finderInfo = (HFSPlusVolumeFinderInfo*) &vol->vh->finderInfo;
@@ -1242,13 +1332,3 @@ fsw_hfsplus_get_bless_info(struct fsw_hfsplus_volume *vol,
     return status;
 }
 
-/* HFS+ FSW Method Dispatch Table
- */
-struct fsw_fstype_table FSW_FSTYPE_TABLE_NAME(hfsplus) = {
-    { FSW_STRING_TYPE_ISO88591, 4, 4, "hfsplus" },
-    sizeof(struct fsw_hfsplus_volume), sizeof(struct fsw_hfsplus_dnode),
-    fsw_hfsplus_vol_mount, fsw_hfsplus_vol_free, fsw_hfsplus_vol_stat,
-    fsw_hfsplus_dno_fill, fsw_hfsplus_dno_free, fsw_hfsplus_dno_stat,
-    fsw_hfsplus_get_ext, fsw_hfsplus_dir_get, fsw_hfsplus_dir_read,
-    fsw_hfsplus_readlink, fsw_hfsplus_get_bless_info
-};

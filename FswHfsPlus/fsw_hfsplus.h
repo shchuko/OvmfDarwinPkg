@@ -284,6 +284,8 @@ typedef struct {
 #pragma pack()
 /*========= end HFS+ constants and data types from Apple TN1150 =============*/
 
+/* FSW: key comparison procedure type */
+typedef int (*k_cmp_t)(HFSPlusBTKey*, HFSPlusBTKey*);
 
 // FSW: HFS+ specific dnode
 struct fsw_hfsplus_dnode {
