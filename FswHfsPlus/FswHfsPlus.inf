@@ -51,6 +51,9 @@
   gEfiFileSystemInfoGuid
   gEfiFileSystemVolumeLabelInfoIdGuid
   gEfiFileInfoGuid
+  gAppleBlessedOsxFolderInfoGuid        ## SOMETIMES_CONSUMES
+  gAppleBlessedSystemFileInfoGuid       ## SOMETIMES_CONSUMES
+  gAppleBlessedSystemFolderInfoGuid     ## SOMETIMES_CONSUMES
 
 [Protocols]
   gEfiBlockIoProtocolGuid

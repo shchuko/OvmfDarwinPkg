@@ -242,7 +242,8 @@ struct fsw_volume {
 
 struct fsw_dnode {
     fsw_u32     refcount;           //!< Reference count
-    
+    fsw_u32     complete;           //!< Flag to be set on all dnode info was filled
+
     struct VOLSTRUCTNAME *vol;      //!< The volume this dnode belongs to
     struct DNODESTRUCTNAME *parent; //!< Parent directory dnode
     struct fsw_string name;         //!< Name of this item in the parent directory
@@ -265,6 +266,12 @@ enum {
     FSW_DNODE_TYPE_DIR,
     FSW_DNODE_TYPE_SYMLINK,
     FSW_DNODE_TYPE_SPECIAL
+};
+
+enum {
+    BLESSED_TYPE_SYSTEM_FILE,
+    BLESSED_TYPE_SYSTEM_FOLDER,
+    BLESSED_TYPE_OSX_FOLDER
 };
 
 /**
@@ -372,6 +379,7 @@ struct fsw_fstype_table
                              struct fsw_shandle *shand, struct DNODESTRUCTNAME **child_dno);
     fsw_status_t (*readlink)(struct VOLSTRUCTNAME *vol, struct DNODESTRUCTNAME *dno,
                              struct fsw_string *link_target);
+    fsw_status_t (*get_bless_info)(struct VOLSTRUCTNAME *vol, fsw_u32 type, struct DNODESTRUCTNAME **dno_out);
 };
 
 
@@ -400,8 +408,10 @@ void         fsw_block_release(struct VOLSTRUCTNAME *vol, fsw_u32 phys_bno, void
 /*@{*/
 
 fsw_status_t fsw_dnode_create_root(struct VOLSTRUCTNAME *vol, fsw_u32 dnode_id, struct DNODESTRUCTNAME **dno_out);
-fsw_status_t fsw_dnode_create(struct DNODESTRUCTNAME *parent_dno, fsw_u32 dnode_id, int type,
+fsw_status_t fsw_dnode_create(struct VOLSTRUCTNAME *vol, struct DNODESTRUCTNAME *parent_dno, fsw_u32 dnode_id, int type,
                               struct fsw_string *name, struct DNODESTRUCTNAME **dno_out);
+void         fsw_dnode_mkcomplete(struct DNODESTRUCTNAME *dno);
+int          fsw_dnode_is_root(struct fsw_dnode *dno);
 void         fsw_dnode_retain(struct fsw_dnode *dno);
 void         fsw_dnode_release(struct fsw_dnode *dno);
 
@@ -417,6 +427,9 @@ fsw_status_t fsw_dnode_dir_read(struct fsw_shandle *shand, struct fsw_dnode **ch
 fsw_status_t fsw_dnode_readlink(struct fsw_dnode *dno, struct fsw_string *link_target);
 fsw_status_t fsw_dnode_readlink_data(struct DNODESTRUCTNAME *dno, struct fsw_string *link_target);
 fsw_status_t fsw_dnode_resolve(struct fsw_dnode *dno, struct fsw_dnode **target_dno_out);
+
+fsw_status_t fsw_dnode_get_path(struct VOLSTRUCTNAME *vol, struct DNODESTRUCTNAME *dno, struct fsw_string *out_path);
+fsw_status_t fsw_get_bless_info(struct VOLSTRUCTNAME *vol, int type, struct fsw_string *out_path);
 
 /*@}*/
 

@@ -38,6 +38,7 @@
 #ifndef _FSW_EFI_H_
 #define _FSW_EFI_H_
 
+#include <Guid/Darwin/AppleBless.h>
 #include "fsw_core.h"
 
 

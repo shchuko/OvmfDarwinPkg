@@ -324,7 +324,7 @@ fsw_status_t fsw_dnode_create_root(struct fsw_volume *vol, fsw_u32 dnode_id, str
 {
     fsw_status_t    status;
     struct fsw_dnode *dno;
-    
+
     // allocate memory for the structure
     status = fsw_alloc_zero(vol->fstype_table->dnode_struct_size, (void **)&dno);
     if (status)
@@ -336,13 +336,19 @@ fsw_status_t fsw_dnode_create_root(struct fsw_volume *vol, fsw_u32 dnode_id, str
     dno->dnode_id = dnode_id;
     dno->type = FSW_DNODE_TYPE_DIR;
     dno->refcount = 1;
+    dno->complete = 1;
     dno->name.type = FSW_STRING_TYPE_EMPTY;
     // TODO: instead, call a function to create an empty string in the native string type
     
     fsw_dnode_register(vol, dno);
-    
+    fsw_dnode_mkcomplete(dno);
+
     *dno_out = dno;
     return FSW_SUCCESS;
+}
+
+int fsw_dnode_is_root(struct fsw_dnode *dno) {
+    return dno->parent == NULL && dno->type == FSW_DNODE_TYPE_DIR && fsw_strlen(&dno->name) == 0;
 }
 
 /**
@@ -363,13 +369,11 @@ fsw_status_t fsw_dnode_create_root(struct fsw_volume *vol, fsw_u32 dnode_id, str
  * that must be released by the caller with fsw_dnode_release.
  */
 
-fsw_status_t fsw_dnode_create(struct fsw_dnode *parent_dno, fsw_u32 dnode_id, int type,
+fsw_status_t fsw_dnode_create(struct fsw_volume *vol, struct fsw_dnode *parent_dno, fsw_u32 dnode_id, int type,
                               struct fsw_string *name, struct fsw_dnode **dno_out)
 {
     fsw_status_t    status;
-    struct fsw_volume *vol = parent_dno->vol;
     struct fsw_dnode *dno;
-    
     // check if we already have a dnode with the same id
     for (dno = vol->dnode_head; dno; dno = dno->next) {
         if (dno->dnode_id == dnode_id) {
@@ -383,11 +387,18 @@ fsw_status_t fsw_dnode_create(struct fsw_dnode *parent_dno, fsw_u32 dnode_id, in
     status = fsw_alloc_zero(vol->fstype_table->dnode_struct_size, (void **)&dno);
     if (status)
         return status;
-    
+
+    // Flag must be set by fsw_dnode_mkcomplete() call
+    dno->complete = 0;
+
     // fill the structure
     dno->vol = vol;
     dno->parent = parent_dno;
-    fsw_dnode_retain(dno->parent);
+
+    // Parent may be null and filled in future by fsw_dnode_fill() call
+    if (parent_dno != NULL) {
+        fsw_dnode_retain(dno->parent);
+    }
     dno->dnode_id = dnode_id;
     dno->type = type;
     dno->refcount = 1;
@@ -401,6 +412,13 @@ fsw_status_t fsw_dnode_create(struct fsw_dnode *parent_dno, fsw_u32 dnode_id, in
     
     *dno_out = dno;
     return FSW_SUCCESS;
+}
+
+/**
+ * Mark dnode as 'complete' one
+ */
+void fsw_dnode_mkcomplete(struct fsw_dnode *dno) {
+    dno->complete = 1;
 }
 
 /**
@@ -465,7 +483,9 @@ void fsw_dnode_release(struct fsw_dnode *dno)
 fsw_status_t fsw_dnode_fill(struct fsw_dnode *dno)
 {
     // TODO: check a flag right here, call fstype's dnode_fill only once per dnode
-    
+    if (dno->complete) {
+        return FSW_SUCCESS;
+    }
     return dno->vol->fstype_table->dnode_fill(dno->vol, dno);
 }
 
@@ -802,10 +822,9 @@ errorexit:
 fsw_status_t fsw_shandle_open(struct fsw_dnode *dno, struct fsw_shandle *shand)
 {
     fsw_status_t    status;
-    struct fsw_volume *vol = dno->vol;
-    
+
     // read full dnode information into memory
-    status = vol->fstype_table->dnode_fill(vol, dno);
+    status = fsw_dnode_fill(dno);
     if (status)
         return status;
     
@@ -924,6 +943,109 @@ fsw_status_t fsw_shandle_read(struct fsw_shandle *shand, fsw_u32 *buffer_size_in
     shand->pos = pos;
     
     return FSW_SUCCESS;
+}
+
+fsw_status_t fsw_dnode_get_path(struct fsw_volume *vol, struct fsw_dnode *dno, struct fsw_string *out_path) {
+    fsw_status_t        status;
+    struct fsw_string   *array, *temp_arr_ptr;
+    fsw_u32             array_capacity, array_len;
+    fsw_s32             i;
+    fsw_u16             *temp_char_ptr;
+
+    // Simple growable array
+#define START_BUF_SIZE 5
+    array_capacity = START_BUF_SIZE;
+    array_len = 0;
+    temp_arr_ptr = NULL;
+    status = fsw_alloc(array_capacity * sizeof(struct fsw_string), &array);
+    if (status) {
+        return status;
+    }
+#undef START_BUF_SIZE
+
+    out_path->len = 0;
+    out_path->size = 0;
+
+    while (status == FSW_SUCCESS && !fsw_dnode_is_root(dno)) {
+        // Extend array capacity if needed
+        if (array_len == array_capacity) {
+            temp_arr_ptr = array;
+            array_capacity *= 2;
+            status = fsw_alloc(array_capacity * sizeof(struct fsw_string), &array);
+
+            if (!status) {
+                // Copy array contents
+                for (i = 0; i < array_len; ++i)
+                    array[i] = temp_arr_ptr[i];
+
+                // Free the old pool
+                fsw_free(temp_arr_ptr);
+                temp_arr_ptr = NULL;
+            } else
+                // Store actual pointer into 'array'
+                array = temp_arr_ptr;
+        }
+
+        // If no errors - copy dnode name
+        if (status == FSW_SUCCESS)
+            status = fsw_strdup_coerce(&array[array_len], FSW_STRING_TYPE_UTF16, &dno->name);
+
+        // On any error free all allocated memory
+        if (status)
+            goto done;
+
+        out_path->len += array[array_len].len + 1;
+
+        ++array_len;
+        dno = dno->parent;
+    }
+
+#define SEP_CHAR L'\\'
+    out_path->type = FSW_STRING_TYPE_UTF16;
+
+    if (out_path->len == 0) {
+        out_path->len = 1;
+    }
+
+    out_path->size = out_path->len * sizeof(fsw_u16);
+    status = fsw_alloc(out_path->size, &out_path->data);
+    if (status)
+        goto done;
+
+    temp_char_ptr = (fsw_u16 *) out_path->data;
+    if (array_len > 0) {
+        for (i = array_len - 1; i >= 0; --i) {
+            *(temp_char_ptr++) = SEP_CHAR;
+            fsw_memcpy(temp_char_ptr, array[i].data, array[i].size);
+            temp_char_ptr += array[i].len;
+        }
+    } else {
+        *temp_char_ptr = SEP_CHAR;
+    }
+
+#undef SEP_CHAR
+
+done:
+    for (int i = 0; i < array_len; ++i)
+       fsw_strfree(&array[i]);
+    fsw_free(array);
+
+    return status;
+}
+
+fsw_status_t fsw_get_bless_info(struct fsw_volume *vol, int type, struct fsw_string *out_path) {
+    fsw_status_t status;
+    struct fsw_dnode *dnode;
+
+    status = vol->fstype_table->get_bless_info(vol, type, &dnode);
+    if (status) {
+        return status;
+    }
+// FIXME check is necessary to release dnode here
+//    fsw_dnode_release(dnode);
+
+    status = fsw_dnode_get_path(vol, dnode, out_path);
+    return status;
 }
 
 // EOF

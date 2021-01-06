@@ -112,6 +112,10 @@ EFI_STATUS fsw_efi_dnode_fill_FileInfo(IN FSW_VOLUME_DATA *Volume,
                                        IN OUT UINTN *BufferSize,
                                        OUT VOID *Buffer);
 
+EFI_STATUS fsw_efi_bless_info(IN FSW_VOLUME_DATA *Volume,
+                              IN UINT32 type,
+                              OUT VOID *Buffer,
+                              IN OUT UINTN *BufferSize);
 /**
  * Interface structure for the EFI Driver Binding protocol.
  */
@@ -863,6 +867,53 @@ EFI_STATUS fsw_efi_dir_setpos(IN FSW_FILE_DATA *File,
     }
 }
 
+EFI_STATUS fsw_efi_bless_info(IN FSW_VOLUME_DATA *Volume,
+                              IN UINT32 BlessType,
+                              OUT VOID *Buffer,
+                              IN OUT UINTN *BufferSize) {
+    EFI_STATUS                  Status;
+    UINT32                      RequiredSize;
+    EFI_DEVICE_PATH_PROTOCOL    *devicePathProtocol;
+    struct fsw_string           PathStr;
+    UINT16                      *PathChars;
+    UINT32                      i;
+
+    Status = fsw_efi_map_status(fsw_get_bless_info(Volume->vol, BlessType, &PathStr), Volume);
+    if (Status)
+        return EFI_NOT_FOUND;
+
+    // We assume that PathStr is in UTF16
+    // Reserve one symbol for '\0'
+    RequiredSize = (PathStr.len + 1) * sizeof(UINT16);
+    if ((PathChars = AllocatePool(RequiredSize)) == NULL) {
+        fsw_strfree (&PathStr);
+        return EFI_OUT_OF_RESOURCES;
+    }
+
+    for (i = 0; i < PathStr.len; ++i)
+        PathChars[i] = ((UINT16*)PathStr.data)[i];
+    PathChars[PathStr.len] = 0;
+    fsw_strfree(&PathStr);
+
+    Print(L"Bless info=%s\n", PathChars);
+
+    devicePathProtocol = FileDevicePath(Volume->Handle, PathChars);
+    FreePool(PathChars);
+
+    RequiredSize = GetDevicePathSize(devicePathProtocol);
+    if (*BufferSize < RequiredSize)
+        Status = EFI_BUFFER_TOO_SMALL;
+    else {
+        CopyMem(Buffer, devicePathProtocol, RequiredSize);
+        Status = EFI_SUCCESS;
+    }
+
+    *BufferSize = RequiredSize;
+    FreePool(devicePathProtocol);
+
+    return Status;
+}
+
 /**
  * Get file or volume information. This function implements the GetInfo call
  * for all file handles. Control is dispatched according to the type of information
@@ -936,11 +987,16 @@ EFI_STATUS fsw_efi_dnode_getinfo(IN FSW_FILE_DATA *File,
         // prepare for return
         *BufferSize = RequiredSize;
         Status = EFI_SUCCESS;
-        
+    } else if (CompareGuid(InformationType, &gAppleBlessedSystemFileInfoGuid)) {
+        Status = fsw_efi_bless_info(Volume, BLESSED_TYPE_SYSTEM_FILE, Buffer, BufferSize);
+    } else if (CompareGuid(InformationType, &gAppleBlessedSystemFolderInfoGuid)) {
+        Status = fsw_efi_bless_info(Volume, BLESSED_TYPE_SYSTEM_FOLDER, Buffer, BufferSize);
+    } else if (CompareGuid(InformationType, &gAppleBlessedOsxFolderInfoGuid)) {
+        Status = fsw_efi_bless_info(Volume, BLESSED_TYPE_OSX_FOLDER, Buffer, BufferSize);
     } else {
         Status = EFI_UNSUPPORTED;
     }
-    
+
     return Status;
 }
 

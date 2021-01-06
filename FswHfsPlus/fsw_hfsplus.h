@@ -40,9 +40,17 @@
 #define kHFSPlusDataFork        0x00 // data fork type
 #define kHFSPlusResourceFork    0xFF // resource fork type
 
-#define kHFSRootFolderID           2 // ID of the root folder
-#define kHFSExtentsFileID          3 // ID of the extent overflow file
-#define kHFSCatalogFileID          4 // ID of the catalog file
+#define kHFSRootParentID            1 // Parent ID of the root folder
+#define kHFSRootFolderID            2 // ID of the root folder
+#define kHFSExtentsFileID           3 // ID of the extent overflow file
+#define kHFSCatalogFileID           4 // ID of the catalog file
+#define kHFSBadBlockFileID          5 // ID of the bad block file
+#define kHFSAllocationFileID        6 // ID of the allocation file
+#define kHFSStartupFileID           7 // ID of the startup file
+#define kHFSAttributesFileID        8 // ID of the attributes file
+#define kHFSRepairCatalogFileID     14 // Used temporarily when rebuilding Catalog B-tree
+#define kHFSBogusExtentFileID       15 // Used temporarily during ExchangeFiles operations
+#define kHFSFirstUserCatalogNodeID  16 // First CNID available for use by user files and folders
 
 #define kHFSPlusFolderRecord       1 // catalog folder record type
 #define kHFSPlusFileRecord         2 // catalog file record type
@@ -263,6 +271,16 @@ typedef union {
     HFSPlusCatalogKey catKey;    // catalog key fields
 } HFSPlusBTKey;
 
+typedef struct {
+    fsw_u32 blessedSystemFolderID; // for OpenFirmware systems
+    fsw_u32 blessedSystemFileID;   // for EFI systems
+    fsw_u32 openWindowFolderID;    // deprecated, first link in linked list of folders to open at mount
+    fsw_u32 blessedAlternateOSID;  // currently used for FV2 recovery, inaccessible from UEFI
+    fsw_u32 unused;                // formerly PowerTalk Inbox
+    fsw_u32 blessedOSXFolderID;    // currently used for normal recovery
+    fsw_u64 volumeID;
+} HFSPlusVolumeFinderInfo;
+
 #pragma pack()
 /*========= end HFS+ constants and data types from Apple TN1150 =============*/
 
@@ -279,6 +297,8 @@ struct fsw_hfsplus_dnode {
     fsw_u32 fd_creator;
     fsw_u32 fd_type;
     fsw_u32 inode_num;
+
+    fsw_u32 parent_id;              // parent id used by dnode_fill()
 };
 
 
