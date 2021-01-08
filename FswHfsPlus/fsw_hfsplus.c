@@ -158,7 +158,7 @@ fsw_hfsplus_posix_time(fsw_u32 t);
  * Return a pointer to the B-Tree key at the beginning of the record.
  */
 static HFSPlusBTKey *
-fsw_hfsplus_btnode_get_rec(BTNodeDescriptor* btnode, fsw_u16 size, fsw_u16 rnum);
+fsw_hfsplus_btnode_get_rec(BTNodeDescriptor* btnode, fsw_u16 size, fsw_u32 rnum);
 
 /* Given a B-Tree record pointer 'k', return a pointer to the data
  * immediately following the key record; IOW, skip the key record which
@@ -565,16 +565,16 @@ fsw_hfsplus_dno_stat(struct fsw_hfsplus_volume *v, struct fsw_hfsplus_dnode *d,
 }
 
 static HFSPlusBTKey *
-fsw_hfsplus_btnode_get_rec(BTNodeDescriptor* btnode, fsw_u16 size, fsw_u16 rnum)
+fsw_hfsplus_btnode_get_rec(BTNodeDescriptor* btnode, fsw_u16 size, fsw_u32 rnum)
 {
-    fsw_u16 *off = (fsw_u16 *)((void *)btnode + size) - 1 - rnum;
-    return (HFSPlusBTKey *)((void *)btnode + fsw_u16_be_swap(*off));
+    fsw_u16 *off = (fsw_u16 *) ((fsw_u8 *) btnode + size) - 1 - rnum;
+    return (HFSPlusBTKey *)((fsw_u8 *)btnode + fsw_u16_be_swap(*off));
 }
 
 static void *
 fsw_hfsplus_bt_rec_skip_key(HFSPlusBTKey *k)
 {
-    return (void *)k + sizeof(k->keyLength) + fsw_u16_be_swap(k->keyLength);
+    return (fsw_u8 *)k + sizeof(k->keyLength) + fsw_u16_be_swap(k->keyLength);
 }
 
 static fsw_u32
@@ -609,8 +609,8 @@ fsw_hfsplus_bt_search(struct fsw_hfsplus_dnode *bt,
             return status;
 
         // sanity check: record 0 located immediately after node descriptor
-        if ((void *)btnode + sizeof(BTNodeDescriptor) !=
-            (void *)fsw_hfsplus_btnode_get_rec(btnode, bt->bt_ndsz, 0))
+        if ((fsw_u8 *)btnode + sizeof(BTNodeDescriptor) !=
+            (fsw_u8 *)fsw_hfsplus_btnode_get_rec(btnode, bt->bt_ndsz, 0))
             return FSW_VOLUME_CORRUPTED;
 
         // search records within current node
@@ -788,7 +788,7 @@ static fsw_status_t
 fsw_hfsplus_fswstr2unistr(HFSUniStr255* t, struct fsw_string* src)
 {
     fsw_status_t status;
-    struct fsw_string ws = FSW_STRING_INIT;
+    struct fsw_string ws;
 
     status = fsw_strdup_coerce(&ws, FSW_STRING_TYPE_UTF16, src);
     if (status == FSW_SUCCESS) {
@@ -797,7 +797,6 @@ fsw_hfsplus_fswstr2unistr(HFSUniStr255* t, struct fsw_string* src)
             fsw_memcpy(t->unicode, fsw_strdata(&ws), fsw_strsize(&ws));
         }
     }
-
     fsw_strfree (&ws);
     return status;
 }
@@ -862,7 +861,6 @@ fsw_hfsplus_btree_get_rec(struct fsw_hfsplus_dnode *bt,
         }
     }
 
-    return status;
 }
 
 static fsw_status_t
