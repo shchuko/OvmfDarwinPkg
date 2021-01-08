@@ -877,6 +877,10 @@ EFI_STATUS fsw_efi_bless_info(IN FSW_VOLUME_DATA *Volume,
     struct fsw_string           PathStr;
     UINT16                      *PathChars;
 
+#if DEBUG_LEVEL
+    Print(L"fsw_efi_bless_info.1\n");
+#endif
+
     Status = fsw_efi_map_status(fsw_get_bless_info(Volume->vol, BlessType, &PathStr), Volume);
     if (Status)
         return EFI_NOT_FOUND;
@@ -893,7 +897,9 @@ EFI_STATUS fsw_efi_bless_info(IN FSW_VOLUME_DATA *Volume,
     PathChars[PathStr.len] = 0;
     fsw_strfree(&PathStr);
 
-    Print(L"Bless info=%s\n", PathChars);
+#if DEBUG_LEVEL
+    Print(L"fsw_efi_bless_info.2 type=%d, res=%s\n", BlessType, PathChars);
+#endif
 
     devicePathProtocol = FileDevicePath(Volume->Handle, PathChars);
     FreePool(PathChars);
@@ -928,33 +934,33 @@ EFI_STATUS fsw_efi_dnode_getinfo(IN FSW_FILE_DATA *File,
     EFI_FILE_SYSTEM_INFO *FSInfo;
     UINTN               RequiredSize;
     struct fsw_volume_stat vsb;
-    
+
     if (CompareGuid(InformationType, &gEfiFileInfoGuid)) {
 #if DEBUG_LEVEL
         Print(L"fsw_efi_dnode_getinfo: FILE_INFO\n");
 #endif
-        
+
         Status = fsw_efi_dnode_fill_FileInfo(Volume, File->shand.dnode, BufferSize, Buffer);
-        
+
     } else if (CompareGuid(InformationType, &gEfiFileSystemInfoGuid)) {
 #if DEBUG_LEVEL
         Print(L"fsw_efi_dnode_getinfo: FILE_SYSTEM_INFO\n");
 #endif
-        
+
         // check buffer size
         RequiredSize = SIZE_OF_EFI_FILE_SYSTEM_INFO + fsw_efi_strsize(&Volume->vol->label);
         if (*BufferSize < RequiredSize) {
             *BufferSize = RequiredSize;
             return EFI_BUFFER_TOO_SMALL;
         }
-        
+
         // fill structure
         FSInfo = (EFI_FILE_SYSTEM_INFO *)Buffer;
         FSInfo->Size        = RequiredSize;
         FSInfo->ReadOnly    = TRUE;
         FSInfo->BlockSize   = Volume->vol->log_blocksize;
         fsw_efi_strcpy(FSInfo->VolumeLabel, &Volume->vol->label);
-        
+
         // get the missing info from the fs driver
         ZeroMem(&vsb, sizeof(struct fsw_volume_stat));
         Status = fsw_efi_map_status(fsw_volume_stat(Volume->vol, &vsb), Volume);
@@ -962,26 +968,26 @@ EFI_STATUS fsw_efi_dnode_getinfo(IN FSW_FILE_DATA *File,
             return Status;
         FSInfo->VolumeSize  = vsb.total_bytes;
         FSInfo->FreeSpace   = vsb.free_bytes;
-        
+
         // prepare for return
         *BufferSize = RequiredSize;
         Status = EFI_SUCCESS;
-        
+
     } else if (CompareGuid(InformationType, &gEfiFileSystemVolumeLabelInfoIdGuid)) {
 #if DEBUG_LEVEL
         Print(L"fsw_efi_dnode_getinfo: FILE_SYSTEM_VOLUME_LABEL\n");
 #endif
-        
+
         // check buffer size
         RequiredSize = SIZE_OF_EFI_FILE_SYSTEM_VOLUME_LABEL_INFO + fsw_efi_strsize(&Volume->vol->label);
         if (*BufferSize < RequiredSize) {
             *BufferSize = RequiredSize;
             return EFI_BUFFER_TOO_SMALL;
         }
-        
+
         // copy volume label
         fsw_efi_strcpy(((EFI_FILE_SYSTEM_VOLUME_LABEL_INFO *)Buffer)->VolumeLabel, &Volume->vol->label);
-        
+
         // prepare for return
         *BufferSize = RequiredSize;
         Status = EFI_SUCCESS;
@@ -1007,7 +1013,7 @@ EFI_STATUS fsw_efi_dnode_getinfo(IN FSW_FILE_DATA *File,
 static void fsw_efi_store_time_posix(struct fsw_dnode_stat *sb, int which, fsw_u32 posix_time)
 {
     EFI_FILE_INFO       *FileInfo = (EFI_FILE_INFO *)sb->host_data;
-    
+
     if (which == FSW_DNODE_STAT_CTIME)
         fsw_efi_decode_time(&FileInfo->CreateTime,       posix_time);
     else if (which == FSW_DNODE_STAT_MTIME)
@@ -1025,7 +1031,7 @@ static void fsw_efi_store_time_posix(struct fsw_dnode_stat *sb, int which, fsw_u
 static void fsw_efi_store_attr_posix(struct fsw_dnode_stat *sb, fsw_u16 posix_mode)
 {
     EFI_FILE_INFO       *FileInfo = (EFI_FILE_INFO *)sb->host_data;
-    
+
     if ((posix_mode & S_IWUSR) == 0)
         FileInfo->Attribute |= EFI_FILE_READ_ONLY;
 }
@@ -1044,26 +1050,26 @@ EFI_STATUS fsw_efi_dnode_fill_FileInfo(IN FSW_VOLUME_DATA *Volume,
     UINTN               RequiredSize;
     struct fsw_dnode_stat sb;
     struct fsw_dnode    *target_dno;
-    
+
     // make sure the dnode has complete info
     Status = fsw_efi_map_status(fsw_dnode_fill(dno), Volume);
     if (EFI_ERROR(Status))
         return Status;
-    
+
     // TODO: check/assert that the dno's name is in UTF16
-    
+
     // check buffer size
     RequiredSize = SIZE_OF_EFI_FILE_INFO + fsw_efi_strsize(&dno->name);
     if (*BufferSize < RequiredSize) {
         // TODO: wind back the directory in this case
-        
+
 #if DEBUG_LEVEL
         Print(L"...BUFFER TOO SMALL\n");
 #endif
         *BufferSize = RequiredSize;
         return EFI_BUFFER_TOO_SMALL;
     }
-    
+
     // fill structure
     ZeroMem(Buffer, RequiredSize);
     FileInfo = (EFI_FILE_INFO *)Buffer;
@@ -1092,7 +1098,7 @@ EFI_STATUS fsw_efi_dnode_fill_FileInfo(IN FSW_VOLUME_DATA *Volume,
     if (dno->type == FSW_DNODE_TYPE_DIR)
         FileInfo->Attribute    |= EFI_FILE_DIRECTORY;
     fsw_efi_strcpy(FileInfo->FileName, &dno->name);
-    
+
     // get the missing info from the fs driver
     ZeroMem(&sb, sizeof(struct fsw_dnode_stat));
     sb.store_time_posix = fsw_efi_store_time_posix;
@@ -1102,7 +1108,7 @@ EFI_STATUS fsw_efi_dnode_fill_FileInfo(IN FSW_VOLUME_DATA *Volume,
     if (EFI_ERROR(Status))
         return Status;
     FileInfo->PhysicalSize      = sb.used_bytes;
-    
+
     // prepare for return
     *BufferSize = RequiredSize;
 #if DEBUG_LEVEL
