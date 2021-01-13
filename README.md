@@ -60,4 +60,12 @@ build -a X64 -t XCODE5 -p OvmfDarwinPkg/OvmfDarwinPkgX64.dsc -b DEBUG
 build -a X64 -t GCC5 -p OvmfDarwinPkg/OvmfDarwinPkgX64.dsc -b DEBUG
 ```
 
+## Added components
 
+- [FswHfsPlus](FswHfsPlus), based on https://github.com/gsomlo/edk2/tree/gls-hfsplus/OvmfPkg/FswHfsPlus
+
+- [AppleSupportLib](Library/AppleSupportLib), based on https://github.com/fishman/edk2/tree/apple63/OvmfPkg/Library/AppleSupportLib
+
+- [IntelFrameworkPkg](LegacyPackages/IntelFrameworkPkg), from [UDK2018](https://github.com/tianocore/edk2/tree/UDK2018/IntelFrameworkPkg)
+
+- [IntelFrameworkModulePkg](LegacyPackages/IntelFrameworkModulePkg), from [UDK2018](https://github.com/tianocore/edk2/tree/UDK2018/IntelFrameworkModulePkg)
