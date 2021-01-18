@@ -302,7 +302,7 @@ INF  MdeModulePkg/Universal/Acpi/BootGraphicsResourceTableDxe/BootGraphicsResour
 #
 # HFS+ Support
 #
-INF  OvmfDarwinPkg/FswHfsPlus/FswHfsPlus.inf
+INF  OvmfDarwinPkg/OpenHfsPlus/OpenHfsPlus.inf
 
 INF  FatPkg/EnhancedFatDxe/Fat.inf
 INF  MdeModulePkg/Universal/Disk/UdfDxe/UdfDxe.inf

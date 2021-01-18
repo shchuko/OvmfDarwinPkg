@@ -862,7 +862,7 @@
   #
   # HFS+ Support
   #
-  OvmfDarwinPkg/FswHfsPlus/FswHfsPlus.inf
+  OvmfDarwinPkg/OpenHfsPlus/OpenHfsPlus.inf
 
   #
   # Network Support
