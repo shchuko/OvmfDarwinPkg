@@ -59,10 +59,10 @@ printHelp() {
 }
 
 setupEdk() {
-  git clone --single-branch --branch "$EDK_BRANCH" "$EDK_REMOTE" "$EDK_DIR"   
+  git clone --filter=blob:none --single-branch --branch "$EDK_BRANCH" "$EDK_REMOTE" "$EDK_DIR"   
  
   cd "$EDK_DIR"
-  
+
   git submodule update --init
   make -C BaseTools
   
