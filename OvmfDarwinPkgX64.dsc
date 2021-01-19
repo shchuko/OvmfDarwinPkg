@@ -865,6 +865,11 @@
   OvmfDarwinPkg/OpenHfsPlus/OpenHfsPlus.inf
 
   #
+  # APFS Support
+  #
+  OvmfDarwinPkg/ApfsDriverLoader/ApfsDriverLoader.inf
+
+  #
   # Network Support
   #
 !include NetworkPkg/NetworkComponents.dsc.inc

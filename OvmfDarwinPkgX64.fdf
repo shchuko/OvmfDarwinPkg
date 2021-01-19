@@ -304,6 +304,11 @@ INF  MdeModulePkg/Universal/Acpi/BootGraphicsResourceTableDxe/BootGraphicsResour
 #
 INF  OvmfDarwinPkg/OpenHfsPlus/OpenHfsPlus.inf
 
+#
+# APFS Support
+#
+INF OvmfDarwinPkg/ApfsDriverLoader/ApfsDriverLoader.inf
+
 INF  FatPkg/EnhancedFatDxe/Fat.inf
 INF  MdeModulePkg/Universal/Disk/UdfDxe/UdfDxe.inf
 
