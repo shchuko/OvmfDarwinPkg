@@ -996,7 +996,8 @@ BmExpandPartitionDevicePath (
 
 /**
   Expand the media device path which points to a BlockIo or SimpleFileSystem instance
-  by appending EFI_REMOVABLE_MEDIA_FILE_NAME.
+  by appending Apple bootloader path (firstly), or appending EFI_REMOVABLE_MEDIA_FILE_NAME
+  if apple bootloader was not found.
 
   @param DevicePath  The media device path pointing to a BlockIo or SimpleFileSystem instance.
   @param FullPath    The full path returned by the routine in last call.
@@ -1023,6 +1024,18 @@ BmExpandMediaDevicePath (
   UINTN                               NumberSimpleFileSystemHandles;
   UINTN                               Index;
   BOOLEAN                             GetNext;
+  EFI_APPLE_BOOT_PATH_PROTOCOL        *AppleBootPathProtocol;
+
+  Status = gBS->LocateProtocol (
+    &gEfiAppleBootPathProtocolGuid,
+    NULL,
+    (VOID *) &AppleBootPathProtocol
+  );
+
+  if (Status) {
+    AppleBootPathProtocol = NULL;
+    DEBUG ((DEBUG_ERROR, "%a, Locate AppleBootPathProtocol errored, status=%r\n", __FUNCTION__, Status));
+  }
 
   GetNext = (BOOLEAN)(FullPath == NULL);
   //
@@ -1033,7 +1046,21 @@ BmExpandMediaDevicePath (
   if (!EFI_ERROR (Status)) {
     ASSERT (IsDevicePathEnd (TempDevicePath));
 
-    NextFullPath = FileDevicePath (Handle, EFI_REMOVABLE_MEDIA_FILE_NAME);
+    //
+    // Try to find Apple bootloader
+    //
+    NextFullPath = NULL;
+    if (AppleBootPathProtocol != NULL) {
+      NextFullPath = AppleBootPathProtocol->GetBootLoaderPath(
+          AppleBootPathProtocol,
+          Handle
+          );
+    }
+
+    // If not found use default one
+    if (NextFullPath == NULL) {
+      NextFullPath = FileDevicePath (Handle, EFI_REMOVABLE_MEDIA_FILE_NAME);
+    }
     //
     // For device path pointing to simple file system, it only expands to one full path.
     //
@@ -1101,7 +1128,21 @@ BmExpandMediaDevicePath (
     // Check whether the device path of boot option is part of the SimpleFileSystem handle's device path
     //
     if ((Size <= TempSize) && (CompareMem (TempDevicePath, DevicePath, Size) == 0)) {
-      NextFullPath = FileDevicePath (SimpleFileSystemHandles[Index], EFI_REMOVABLE_MEDIA_FILE_NAME);
+      //
+      // Try to find Apple bootloader
+      //
+      NextFullPath = NULL;
+      if (AppleBootPathProtocol != NULL) {
+        NextFullPath = AppleBootPathProtocol->GetBootLoaderPath(
+            AppleBootPathProtocol,
+            SimpleFileSystemHandles[Index]
+            );
+      }
+
+      // If not found use default one
+      if (NextFullPath == NULL) {
+        NextFullPath = FileDevicePath (SimpleFileSystemHandles[Index], EFI_REMOVABLE_MEDIA_FILE_NAME);
+      }
       if (GetNext) {
         break;
       } else {
