@@ -15,6 +15,7 @@
 
 #include "Console.h"
 #include "Datahub.h"
+#include "Boot.h"
 
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
@@ -103,6 +104,9 @@ InitializeAppleSupport (
   ASSERT_EFI_ERROR(Status);
 
   Status = InitializeFirmware();
+  ASSERT_EFI_ERROR(Status);
+
+  Status = InitializeAppleBoot(ImageHandle);
   ASSERT_EFI_ERROR(Status);
 
   return Status;

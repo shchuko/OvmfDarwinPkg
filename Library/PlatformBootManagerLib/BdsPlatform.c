@@ -1541,11 +1541,6 @@ PlatformBootManagerAfterConsole (
   SetBootOrderFromQemu ();
 
   PlatformBmPrintScRegisterHandler ();
-
-  //
-  // Launch Apple bootloader
-  //
-  BdsBootApple ();
 }
 
 /**

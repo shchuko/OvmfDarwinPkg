@@ -26,7 +26,4 @@ InitializeAppleSupport (
   IN EFI_SYSTEM_TABLE   *SystemTable
   );
 
-EFI_STATUS
-BdsBootApple ();
-
 #endif
