@@ -62,7 +62,7 @@ build -a X64 -t GCC5 -p OvmfDarwinPkg/OvmfDarwinPkgX64.dsc -b DEBUG
 
 ## Added components
 
-- [FswHfsPlus](FswHfsPlus), based on https://github.com/gsomlo/edk2/tree/gls-hfsplus/OvmfPkg/FswHfsPlus
+- [OpenHfsPlus](OpenHfsPlus), based on https://github.com/gsomlo/edk2/tree/gls-hfsplus/OvmfPkg/FswHfsPlus
 
 - [AppleSupportLib](Library/AppleSupportLib), based on https://github.com/fishman/edk2/tree/apple63/OvmfPkg/Library/AppleSupportLib
 
