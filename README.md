@@ -69,3 +69,7 @@ build -a X64 -t GCC5 -p OvmfDarwinPkg/OvmfDarwinPkgX64.dsc -b DEBUG
 - [IntelFrameworkPkg](LegacyPackages/IntelFrameworkPkg), from [UDK2018](https://github.com/tianocore/edk2/tree/UDK2018/IntelFrameworkPkg)
 
 - [IntelFrameworkModulePkg](LegacyPackages/IntelFrameworkModulePkg), from [UDK2018](https://github.com/tianocore/edk2/tree/UDK2018/IntelFrameworkModulePkg)
+
+- [UefiBootManagerLib](Library/UefiBootManagerLib) from edk2 MdeModulePkg
+  
+- Required [Protocols](Include/Protocol/Darwin) and [GUIDes](Include/Guid/Darwin)
