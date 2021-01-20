@@ -17,7 +17,7 @@
 
 #include "Common.h"
 
-#include <Protocol/ConsoleControl.h>
+#include <Protocol/Darwin/ConsoleControl.h>
 
 EFI_STATUS
 EFIAPI

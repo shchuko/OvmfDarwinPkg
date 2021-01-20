@@ -43,7 +43,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Protocol/RamDisk.h>
 #include <Protocol/DeferredImageLoad.h>
 #include <Protocol/PlatformBootManager.h>
-#include <Protocol/AppleBootPath.h>
+#include <Protocol/Darwin/AppleBootPath.h>
 
 #include <Guid/MemoryTypeInformation.h>
 #include <Guid/FileInfo.h>

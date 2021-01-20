@@ -27,7 +27,7 @@
 #include <Library/GenericBdsLib.h>
 
 #include <Protocol/SimpleFileSystem.h>
-#include <Protocol/AppleBootPath.h>
+#include <Protocol/Darwin/AppleBootPath.h>
 
 #include <Guid/FileInfo.h>
 #include <Guid/Darwin/AppleBless.h>
