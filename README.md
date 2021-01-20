@@ -1,3 +1,5 @@
+![.github/workflows/main.yaml](https://github.com/shchuko/OvmfDarwinPkg/workflows/.github/workflows/main.yaml/badge.svg)
+
 # OvmfDarwinPkg
 
 [OVMF](https://github.com/tianocore/edk2/tree/master/OvmfPkg) clone that provides macOS guests support 

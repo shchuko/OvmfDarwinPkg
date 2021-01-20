@@ -1,3 +1,4 @@
+  name: Build
   on: [push, pull_request]
 
   jobs:
@@ -9,6 +10,7 @@
         HOMEBREW_NO_AUTO_UPDATE: 1
 
       steps:
+        - uses: actions/checkout@v2
         - name: Dependicies install
           run: brew install acpica nasm mtoc
 
@@ -23,6 +25,7 @@
         HOMEBREW_NO_AUTO_UPDATE: 1
 
       steps:
+        - uses: actions/checkout@v2
         - name: Dependicies install
           run: brew install acpica nasm mtoc
 
@@ -33,6 +36,7 @@
       name: Linux GCC5 Debug
       runs-on: ubuntu-16.04
       steps:
+        - uses: actions/checkout@v2
         - name: Dependicies install
           run: |
             sudo apt-get update
@@ -44,6 +48,7 @@
       name: Linux GCC5 Release
       runs-on: ubuntu-16.04
       steps:
+        - uses: actions/checkout@v2
         - name: Dependicies install
           run: |
             sudo apt-get update
