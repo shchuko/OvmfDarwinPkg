@@ -1,0 +1,52 @@
+  on: [push, pull_request]
+
+  jobs:
+    build-macos-xcode-debug:
+      name: macOS XCODE Debug
+      runs-on: macos-latest
+      env:
+        HOMEBREW_NO_INSTALL_CLEANUP: 1
+        HOMEBREW_NO_AUTO_UPDATE: 1
+
+      steps:
+        - name: Dependicies install
+          run: brew install acpica nasm mtoc
+
+        - name: Build
+          run: ./builduefi.sh
+
+    build-macos-xcode-release:
+      name: macOS XCODE Release
+      runs-on: macos-latest
+      env:
+        HOMEBREW_NO_INSTALL_CLEANUP: 1
+        HOMEBREW_NO_AUTO_UPDATE: 1
+
+      steps:
+        - name: Dependicies install
+          run: brew install acpica nasm mtoc
+
+        - name: Build
+          run: ./builduefi.sh -buildRelease
+
+    build-linux-gcc5-debug:
+      name: Linux GCC5 Debug
+      runs-on: ubuntu-16.04
+      steps:
+        - name: Dependicies install
+          run: |
+            sudo apt-get update
+            sudo apt-get install nasm uuid-dev libssl-dev iasl
+        - name: Build
+          run: ./builduefi.sh -buildRelease
+
+    build-linux-gcc5-release:
+      name: Linux GCC5 Release
+      runs-on: ubuntu-16.04
+      steps:
+        - name: Dependicies install
+          run: |
+            sudo apt-get update
+            sudo apt-get install nasm uuid-dev libssl-dev iasl
+        - name: Build
+          run: ./builduefi.sh
