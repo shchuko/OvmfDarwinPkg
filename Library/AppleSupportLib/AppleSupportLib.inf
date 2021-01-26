@@ -32,6 +32,7 @@
   Console.c
   Datahub.c
   Boot.c
+  SmBios.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -55,3 +56,5 @@
   gAppleFirmwareVariableGuid  ## SOMETIMES_CONSUMES
   gAppleNVRAMVariableGuid     ## SOMETIMES_CONSUMES
   gAppleBlessedSystemFileInfoGuid  ## SOMETIMES_CONSUMES
+  gEfiSmbiosTableGuid  ## SOMETIMES_CONSUMES
+  gEfiSmbios3TableGuid  ## SOMETIMES_CONSUMES
