@@ -48,12 +48,12 @@
   BaseMemoryLib
 
 [Protocols]
-  gEfiConsoleControlProtocolGuid  
-  gEfiDataHubProtocolGuid
-  gEfiAppleBootPathProtocolGuid
+  gEfiConsoleControlProtocolGuid    ## SOMETIMES_PRODUCES
+  gEfiDataHubProtocolGuid           ## SOMETIMES_PRODUCES
+  gEfiAppleBootPathProtocolGuid     ## SOMETIMES_PRODUCES
 
 [Guids]
-  gAppleFirmwareVariableGuid  ## SOMETIMES_CONSUMES
-  gAppleNVRAMVariableGuid     ## SOMETIMES_CONSUMES
-  gAppleBlessedSystemFileInfoGuid  ## SOMETIMES_CONSUMES
-  gEfiSmbiosTableGuid  ## SOMETIMES_CONSUMES
+  gAppleFirmwareVariableGuid        ## SOMETIMES_CONSUMES
+  gAppleNVRAMVariableGuid           ## SOMETIMES_CONSUMES
+  gAppleBlessedSystemFileInfoGuid   ## SOMETIMES_CONSUMES
+  gEfiSmbiosTableGuid               ## SOMETIMES_CONSUMES
