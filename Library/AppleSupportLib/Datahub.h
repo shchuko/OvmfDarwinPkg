@@ -17,10 +17,10 @@
 
 #include "Common.h"
 
-#include <Library/BaseLib.h>
-#include <Library/BaseMemoryLib.h>
 #include <FrameworkDxe.h>
+
 #include <Guid/DataHubRecords.h>
+
 #include <Protocol/DataHub.h>
 
 EFI_STATUS

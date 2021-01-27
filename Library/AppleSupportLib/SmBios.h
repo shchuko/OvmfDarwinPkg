@@ -18,9 +18,8 @@
 #include "Common.h"
 
 #include <Guid/SmBios.h>
+
 #include <IndustryStandard/SmBios.h>
-#include <Library/UefiLib.h>
-#include <Library/BaseMemoryLib.h>
 
 #define EFI_SYSTEM_TABLE_MAX_ADDRESS 0xFFFFFFFF
 #define SYS_TABLE_PAD(ptr) (((~ptr) +1) & 0x07 )

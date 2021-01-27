@@ -17,8 +17,13 @@
 #define _APPLESUPPORT_COMMON_H_INCLUDED_
 
 #include <Uefi.h>
+
+#include <Library/UefiLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/DebugLib.h>
+
 #include <Library/MemoryAllocationLib.h>
+#include <Library/BaseMemoryLib.h>
+#include <Library/BaseLib.h>
 
 #endif

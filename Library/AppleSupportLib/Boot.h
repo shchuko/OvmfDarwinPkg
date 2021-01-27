@@ -20,11 +20,7 @@
 
 #include <PiDxe.h>
 
-#include <Library/BaseMemoryLib.h>
-#include <Library/BaseLib.h>
 #include <Library/DevicePathLib.h>
-#include <Library/UefiBootServicesTableLib.h>
-#include <Library/GenericBdsLib.h>
 
 #include <Protocol/SimpleFileSystem.h>
 #include <Protocol/Darwin/AppleBootPath.h>
