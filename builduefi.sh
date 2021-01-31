@@ -61,26 +61,26 @@ printHelp() {
 setupEdk() {
   git clone --filter=blob:none --single-branch --branch "$EDK_BRANCH" "$EDK_REMOTE" "$EDK_DIR"   
  
-  cd "$EDK_DIR"
+  cd "$EDK_DIR" || exit 1
 
   git submodule update --init
   make -C BaseTools
   
-  cd "$PKG_PATH"  
+  cd "$PKG_PATH" || exit 1
 }
 
 createLinks() {
   [[ -d $PKG_LINK_PATH ]] || ln -s "$PKG_PATH" "$PKG_LINK_PATH"
 
-  cd "$EDK_DIR"
+  cd "$EDK_DIR" || exit 1
 
   [[ -d "$PKG_PATH/LegacyPackages" ]] && \
-  for LEGACY_PKG_PATH in $(find "$PKG_PATH/LegacyPackages" -maxdepth 1 -type d); do
-    LEGACY_PKG_LINK="$(basename $LEGACY_PKG_PATH)"
+  while read -r LEGACY_PKG_PATH; do
+    LEGACY_PKG_LINK="$(basename "$LEGACY_PKG_PATH")"
     [[ -d $LEGACY_PKG_LINK ]] || ln -s "$LEGACY_PKG_PATH" "$LEGACY_PKG_LINK" 
-  done
+  done < <(find "$PKG_PATH/LegacyPackages" -maxdepth 1 -type d)
 
-  cd "$PKG_PATH"
+  cd "$PKG_PATH" || exit 1
   
   # Copy 'Build' directory easier to work with
   [[ -d Build ]] || ln -s "$EDK_DIR/Build" Build
@@ -88,7 +88,7 @@ createLinks() {
 }
 
 runBuild() {
-  cd "$EDK_DIR"
+  cd "$EDK_DIR" || exit 1
 
   [[ -n $CUSTOM_TARGET_ARCH ]] && TARGET_ARCH="$CUSTOM_TARGET_ARCH" 
   [[ -n $CUSTOM_TARGET ]] && TARGET="$CUSTOM_TARGET" 
@@ -102,7 +102,7 @@ runBuild() {
   eval "$CMD"
   EXIT_STATUS=$?
 
-  cd "$PKG_PATH"
+  cd "$PKG_PATH" || exit 1
 
   return $EXIT_STATUS
 }
@@ -131,14 +131,14 @@ readArgs() {
       -help) printHelp; exit $?
         ;;
 
-      *) BUILD_COMMAND_ARGS="$BUILD_COMMAND_ARGS $@"; break
+      *) BUILD_COMMAND_ARGS="$BUILD_COMMAND_ARGS$*"; break
         ;;
     esac
     shift
   done
 }
 
-readArgs $@
+readArgs "$@"
 
 setEnv
 loadBuildDefaults
