@@ -522,10 +522,18 @@
   # DEBUG_ERROR     0x80000000  // Error
   gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel|0x8000004F
 
-!if $(SOURCE_DEBUG_ENABLE) == TRUE
-  gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x17
+!if $(TARGET) == RELEASE
+  # DEBUG_PRINT_ENABLED
+  gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x2
+  # DEBUG_ERROR | DEBUG_WARN
+  gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel|0x80000002
+  gEfiMdePkgTokenSpaceGuid.PcdFixedDebugPrintErrorLevel|0x80000002
 !else
+  # DEBUG_ASSERT_ENABLED | DEBUG_PRINT_ENABLED | DEBUG_CODE_ENABLED | CLEAR_MEMORY_ENABLED | ASSERT_DEADLOOP_ENABLED
   gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x2F
+  # DEBUG_INIT | DEBUG_WARN | DEBUG_LOAD | DEBUG_FS | DEBUG_ERROR
+  gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel|0x8000004F
+  gEfiMdePkgTokenSpaceGuid.PcdFixedDebugPrintErrorLevel|0x8000004F
 !endif
 
   # This PCD is used to set the base address of the PCI express hierarchy. It
