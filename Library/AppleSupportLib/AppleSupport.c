@@ -18,14 +18,6 @@
 #include "Boot.h"
 #include "SmBios.h"
 
-#include <Library/BaseLib.h>
-#include <Library/BaseMemoryLib.h>
-#include <Library/MemoryAllocationLib.h>
-#include <FrameworkDxe.h>
-#include <Guid/DataHubRecords.h>
-#include <Protocol/DataHub.h>
-#include <Library/UefiRuntimeServicesTableLib.h>
-
 /**
   Register Handler for the specified interrupt source.
 

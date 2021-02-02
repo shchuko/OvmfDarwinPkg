@@ -20,6 +20,7 @@
 
 #include <Library/UefiLib.h>
 #include <Library/UefiBootServicesTableLib.h>
+#include <Library/UefiRuntimeServicesTableLib.h>
 #include <Library/DebugLib.h>
 
 #include <Library/MemoryAllocationLib.h>
