@@ -55,29 +55,35 @@ InitializeFirmware ()
   UINT32              BackgroundClear = 0x00000000;
   UINT32              FwFeatures      = 0x80000015;
   UINT32              FwFeaturesMask  = 0x800003ff;
-  CHAR8               BootArgs[]      = "-v debug=0x14e";
+  CHAR8               BootArgs[]      = "-v debug=0x14e keepsyms=1";
 
   Status = gRT->SetVariable(L"BackgroundClear",
                             &gAppleFirmwareVariableGuid,
                             EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
                             sizeof(BackgroundClear), &BackgroundClear);
+  ASSERT_EFI_ERROR (Status);
 
   Status = gRT->SetVariable(L"FirmwareFeatures",
                             &gAppleFirmwareVariableGuid,
                             EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
                             sizeof(FwFeatures), &FwFeatures);
+  ASSERT_EFI_ERROR (Status);
 
   Status = gRT->SetVariable(L"FirmwareFeaturesMask",
                             &gAppleFirmwareVariableGuid,
                             EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
                             sizeof(FwFeaturesMask), &FwFeaturesMask);
+  ASSERT_EFI_ERROR (Status);
 
+  DEBUG_CODE_BEGIN ();
   Status = gRT->SetVariable(L"boot-args",
                             &gAppleNVRAMVariableGuid,
                             EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
-                            sizeof(BootArgs), &BootArgs);  return Status;
+                            sizeof(BootArgs), &BootArgs);
+  ASSERT_EFI_ERROR (Status);
+  DEBUG_CODE_END ();
 
-  return Status;
+  return EFI_SUCCESS;
 }
 
 /**
