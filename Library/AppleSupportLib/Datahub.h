@@ -20,6 +20,7 @@
 #include <FrameworkDxe.h>
 
 #include <Guid/DataHubRecords.h>
+#include <Guid/Darwin/AppleDataHub.h>
 
 #include <Protocol/DataHub.h>
 

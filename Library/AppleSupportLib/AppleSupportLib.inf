@@ -57,3 +57,6 @@
   gAppleNVRAMVariableGuid           ## SOMETIMES_CONSUMES
   gAppleBlessedSystemFileInfoGuid   ## SOMETIMES_CONSUMES
   gEfiSmbiosTableGuid               ## SOMETIMES_CONSUMES
+  gAppleSystemInfoProducerNameGuid  ## SOMETIMES_CONSUMES
+  gAppleFsbFrequencyPropertyGuid    ## SOMETIMES_CONSUMES
+  gAppleDevicePathsSupportedGuid    ## SOMETIMES_CONSUMES
