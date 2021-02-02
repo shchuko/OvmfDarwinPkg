@@ -1,5 +1,13 @@
   name: Build
-  on: [push, pull_request]
+  on:
+    push:
+      branches:
+        - '**'
+    pull_request:
+      branches:
+        - master
+    release:
+      types: [published]
 
   jobs:
     build-macos-xcode-debug:
@@ -30,7 +38,16 @@
           run: brew install acpica nasm mtoc
 
         - name: Build
-          run: ./builduefi.sh -buildRelease
+          run: ./builduefi.sh -buildRelease -createZip
+
+        - name: Release upload
+          if: ${{ (github.event_name == 'release') || (github.event_name == 'prerelease') }}
+          uses: svenstaro/upload-release-action@v2
+          with:
+            repo_token: ${{ secrets.GITHUB_TOKEN }}
+            file: Binaries/OvmfDarwinBin.zip
+            tag: ${{ github.ref }}
+            overwrite: true
 
     build-linux-gcc5-debug:
       name: Linux GCC5 Debug
@@ -42,7 +59,7 @@
             sudo apt-get update
             sudo apt-get install nasm uuid-dev libssl-dev iasl
         - name: Build
-          run: ./builduefi.sh -buildRelease
+          run: ./builduefi.sh
 
     build-linux-gcc5-release:
       name: Linux GCC5 Release
@@ -54,4 +71,4 @@
             sudo apt-get update
             sudo apt-get install nasm uuid-dev libssl-dev iasl
         - name: Build
-          run: ./builduefi.sh
+          run: ./builduefi.sh -buildRelease -createZip
