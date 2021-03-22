@@ -201,8 +201,8 @@ readArgs() {
 }
 
 setEnv
-cleanup
 readArgs "$@"
+cleanup
 
 if ! loadEnvDefaults && [[ -z "$CUSTOM_TOOLCHAIN" ]]; then
   echo "System type unknown, please provide custom TOOLCHAIN"
