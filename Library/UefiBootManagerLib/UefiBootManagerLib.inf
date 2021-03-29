@@ -38,6 +38,10 @@
   BmDriverHealth.c
   InternalBm.h
 
+  BmAppleFix.c
+  InternalBmAppleFixDepends.h
+  InternalBmAppleFix.h
+
 [Packages]
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
