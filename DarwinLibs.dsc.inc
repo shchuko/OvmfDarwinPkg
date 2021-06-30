@@ -6,3 +6,4 @@
 
 [LibraryClasses.common]
   AppleSupportLib|OvmfDarwinPkg/Library/AppleSupportLib/AppleSupportLib.inf
+  UefiBootManagerLib|OvmfDarwinPkg/Library/UefiBootManagerLib/UefiBootManagerLib.inf
