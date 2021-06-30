@@ -8,3 +8,8 @@
 # HFS+ Support
 #
 INF  OvmfDarwinPkg/OpenHfsPlus/OpenHfsPlus.inf
+
+#
+# APFS Support
+#
+INF OvmfDarwinPkg/ApfsDriverLoader/ApfsDriverLoader.inf
