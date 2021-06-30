@@ -1,6 +1,6 @@
 ## @file
 #  This FDF include file computes the end of the scratch buffer used in
-#  DecompressMemFvs() [OvmfPkg/Sec/SecMain.c]. It is based on the decompressed
+#  DecompressMemFvs() [OvmfDarwinPkg/Sec/SecMain.c]. It is based on the decompressed
 #  (ie. original) size of the LZMA-compressed section of the one FFS file in
 #  the FVMAIN_COMPACT firmware volume.
 #
@@ -54,7 +54,7 @@ DEFINE DECOMP_SCRATCH_SIZE = 0x00010000
 # Note: when we use PcdOvmfDxeMemFvBase in this context, BaseTools have not yet
 # offset it with MEMFD's base address. For that reason we have to do it manually.
 #
-# The calculation below mirrors DecompressMemFvs() [OvmfPkg/Sec/SecMain.c].
+# The calculation below mirrors DecompressMemFvs() [OvmfDarwinPkg/Sec/SecMain.c].
 
 DEFINE OUTPUT_BASE                   = ($(MEMFD_BASE_ADDRESS) + gUefiOvmfPkgTokenSpaceGuid.PcdOvmfDxeMemFvBase + 0x00100000)
 DEFINE DECOMP_SCRATCH_BASE_UNALIGNED = ($(OUTPUT_BASE) + $(OUTPUT_SIZE))

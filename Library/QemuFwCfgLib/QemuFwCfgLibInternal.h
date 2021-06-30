@@ -1,5 +1,5 @@
 /** @file
-  Internal interfaces specific to the QemuFwCfgLib instances in OvmfPkg.
+  Internal interfaces specific to the QemuFwCfgLib instances in OvmfDarwinPkg.
 
   Copyright (C) 2016, Red Hat, Inc.
   Copyright (C) 2017, Advanced Micro Devices. All rights reserved

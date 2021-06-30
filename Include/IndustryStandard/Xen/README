@@ -9,7 +9,7 @@ The modifications that needed to be done are:
 
 
 * Command to run to change types:
-find OvmfPkg/Include/IndustryStandard/Xen -type f -name '*.h' -exec sed --regexp-extended --file=fix_type_in_xen_includes.sed --in-place {} \;
+find OvmfDarwinPkg/Include/IndustryStandard/Xen -type f -name '*.h' -exec sed --regexp-extended --file=fix_type_in_xen_includes.sed --in-place {} \;
 
 $ cat fix_type_in_xen_includes.sed
 # Avoid changing the 'long' that is not a type.

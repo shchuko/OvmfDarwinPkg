@@ -5,9 +5,9 @@
 
   We expect the PEI phase to have covered the following:
   - ensure that the underlying QEMU machine type be Q35
-    (responsible: OvmfPkg/SmmAccess/SmmAccessPei.inf)
+    (responsible: OvmfDarwinPkg/SmmAccess/SmmAccessPei.inf)
   - ensure that the ACPI PM IO space be configured
-    (responsible: OvmfPkg/PlatformPei/PlatformPei.inf)
+    (responsible: OvmfDarwinPkg/PlatformPei/PlatformPei.inf)
 
   Our own entry point is responsible for confirming the SMI feature and for
   configuring it.

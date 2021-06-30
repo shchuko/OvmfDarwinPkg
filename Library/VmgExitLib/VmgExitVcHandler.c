@@ -9,10 +9,14 @@
 #include <Base.h>
 #include <Uefi.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/LocalApicLib.h>
+#include <Library/MemEncryptSevLib.h>
 #include <Library/VmgExitLib.h>
 #include <Register/Amd/Msr.h>
 #include <Register/Intel/Cpuid.h>
 #include <IndustryStandard/InstructionParsing.h>
+
+#include "VmgExitVcHandler.h"
 
 //
 // Instruction execution mode definition
@@ -125,71 +129,6 @@ UINT64
   EFI_SYSTEM_CONTEXT_X64   *Regs,
   SEV_ES_INSTRUCTION_DATA  *InstructionData
   );
-
-//
-// Per-CPU data mapping structure
-//
-typedef struct {
-  BOOLEAN  Dr7Cached;
-  UINT64   Dr7;
-} SEV_ES_PER_CPU_DATA;
-
-
-/**
-  Checks the GHCB to determine if the specified register has been marked valid.
-
-  The ValidBitmap area represents the areas of the GHCB that have been marked
-  valid. Return an indication of whether the area of the GHCB that holds the
-  specified register has been marked valid.
-
-  @param[in] Ghcb    Pointer to the Guest-Hypervisor Communication Block
-  @param[in] Reg     Offset in the GHCB of the register to check
-
-  @retval TRUE       Register has been marked vald in the GHCB
-  @retval FALSE      Register has not been marked valid in the GHCB
-
-**/
-STATIC
-BOOLEAN
-GhcbIsRegValid (
-  IN GHCB                *Ghcb,
-  IN GHCB_REGISTER       Reg
-  )
-{
-  UINT32  RegIndex;
-  UINT32  RegBit;
-
-  RegIndex = Reg / 8;
-  RegBit   = Reg & 0x07;
-
-  return ((Ghcb->SaveArea.ValidBitmap[RegIndex] & (1 << RegBit)) != 0);
-}
-
-/**
-  Marks a register as valid in the GHCB.
-
-  The ValidBitmap area represents the areas of the GHCB that have been marked
-  valid. Set the area of the GHCB that holds the specified register as valid.
-
-  @param[in, out] Ghcb    Pointer to the Guest-Hypervisor Communication Block
-  @param[in] Reg          Offset in the GHCB of the register to mark valid
-
-**/
-STATIC
-VOID
-GhcbSetRegValid (
-  IN OUT GHCB                *Ghcb,
-  IN     GHCB_REGISTER       Reg
-  )
-{
-  UINT32  RegIndex;
-  UINT32  RegBit;
-
-  RegIndex = Reg / 8;
-  RegBit   = Reg & 0x07;
-
-  Ghcb->SaveArea.ValidBitmap[RegIndex] |= (1 << RegBit);
-}
 
 /**
   Return a pointer to the contents of the specified register.
@@ -658,6 +597,64 @@ UnsupportedExit (
 }
 
 /**
+  Validate that the MMIO memory access is not to encrypted memory.
+
+  Examine the pagetable entry for the memory specified. MMIO should not be
+  performed against encrypted memory. MMIO to the APIC page is always allowed.
+
+  @param[in] Ghcb           Pointer to the Guest-Hypervisor Communication Block
+  @param[in] MemoryAddress  Memory address to validate
+  @param[in] MemoryLength   Memory length to validate
+
+  @retval 0          Memory is not encrypted
+  @return            New exception value to propogate
+
+**/
+STATIC
+UINT64
+ValidateMmioMemory (
+  IN GHCB   *Ghcb,
+  IN UINTN  MemoryAddress,
+  IN UINTN  MemoryLength
+  )
+{
+  MEM_ENCRYPT_SEV_ADDRESS_RANGE_STATE  State;
+  GHCB_EVENT_INJECTION                 GpEvent;
+  UINTN                                Address;
+
+  //
+  // Allow APIC accesses (which will have the encryption bit set during
+  // SEC and PEI phases).
+  //
+  Address = MemoryAddress & ~(SIZE_4KB - 1);
+  if (Address == GetLocalApicBaseAddress ()) {
+    return 0;
+  }
+
+  State = MemEncryptSevGetAddressRangeState (
+            0,
+            MemoryAddress,
+            MemoryLength
+            );
+  if (State == MemEncryptSevAddressRangeUnencrypted) {
+    return 0;
+  }
+
+  //
+  // Any state other than unencrypted is an error, issue a #GP.
+  //
+  DEBUG ((DEBUG_ERROR,
+    "MMIO using encrypted memory: %lx\n",
+    (UINT64) MemoryAddress));
+  GpEvent.Uint64 = 0;
+  GpEvent.Elements.Vector = GP_EXCEPTION;
+  GpEvent.Elements.Type   = GHCB_EVENT_INJECTION_TYPE_EXCEPTION;
+  GpEvent.Elements.Valid  = 1;
+
+  return GpEvent.Uint64;
+}
+
+/**
   Handle an MMIO event.
 
   Use the VMGEXIT instruction to handle either an MMIO read or an MMIO write.
@@ -683,6 +680,7 @@ MmioExit (
   UINTN   Bytes;
   UINT64  *Register;
   UINT8   OpCode, SignByte;
+  UINTN   Address;
 
   Bytes = 0;
 
@@ -715,11 +713,68 @@ MmioExit (
       return UnsupportedExit (Ghcb, Regs, InstructionData);
     }
 
+    Status = ValidateMmioMemory (Ghcb, InstructionData->Ext.RmData, Bytes);
+    if (Status != 0) {
+      return Status;
+    }
+
     ExitInfo1 = InstructionData->Ext.RmData;
     ExitInfo2 = Bytes;
     CopyMem (Ghcb->SharedBuffer, &InstructionData->Ext.RegData, Bytes);
 
     Ghcb->SaveArea.SwScratch = (UINT64) Ghcb->SharedBuffer;
+    VmgSetOffsetValid (Ghcb, GhcbSwScratch);
+    Status = VmgExit (Ghcb, SVM_EXIT_MMIO_WRITE, ExitInfo1, ExitInfo2);
+    if (Status != 0) {
+      return Status;
+    }
+    break;
+
+  //
+  // MMIO write (MOV moffsetX, aX)
+  //
+  case 0xA2:
+    Bytes = 1;
+    //
+    // fall through
+    //
+  case 0xA3:
+    Bytes = ((Bytes != 0) ? Bytes :
+             (InstructionData->DataSize == Size16Bits) ? 2 :
+             (InstructionData->DataSize == Size32Bits) ? 4 :
+             (InstructionData->DataSize == Size64Bits) ? 8 :
+             0);
+
+    InstructionData->ImmediateSize = (UINTN) (1 << InstructionData->AddrSize);
+    InstructionData->End += InstructionData->ImmediateSize;
+
+    //
+    // This code is X64 only, so a possible 8-byte copy to a UINTN is ok.
+    // Use a STATIC_ASSERT to be certain the code is being built as X64.
+    //
+    STATIC_ASSERT (
+      sizeof (UINTN) == sizeof (UINT64),
+      "sizeof (UINTN) != sizeof (UINT64), this file must be built as X64"
+      );
+
+    Address = 0;
+    CopyMem (
+      &Address,
+      InstructionData->Immediate,
+      InstructionData->ImmediateSize
+      );
+
+    Status = ValidateMmioMemory (Ghcb, Address, Bytes);
+    if (Status != 0) {
+      return Status;
+    }
+
+    ExitInfo1 = Address;
+    ExitInfo2 = Bytes;
+    CopyMem (Ghcb->SharedBuffer, &Regs->Rax, Bytes);
+
+    Ghcb->SaveArea.SwScratch = (UINT64) Ghcb->SharedBuffer;
+    VmgSetOffsetValid (Ghcb, GhcbSwScratch);
     Status = VmgExit (Ghcb, SVM_EXIT_MMIO_WRITE, ExitInfo1, ExitInfo2);
     if (Status != 0) {
       return Status;
@@ -744,11 +799,17 @@ MmioExit (
     InstructionData->ImmediateSize = Bytes;
     InstructionData->End += Bytes;
 
+    Status = ValidateMmioMemory (Ghcb, InstructionData->Ext.RmData, Bytes);
+    if (Status != 0) {
+      return Status;
+    }
+
     ExitInfo1 = InstructionData->Ext.RmData;
     ExitInfo2 = Bytes;
     CopyMem (Ghcb->SharedBuffer, InstructionData->Immediate, Bytes);
 
     Ghcb->SaveArea.SwScratch = (UINT64) Ghcb->SharedBuffer;
+    VmgSetOffsetValid (Ghcb, GhcbSwScratch);
     Status = VmgExit (Ghcb, SVM_EXIT_MMIO_WRITE, ExitInfo1, ExitInfo2);
     if (Status != 0) {
       return Status;
@@ -777,10 +838,16 @@ MmioExit (
       return UnsupportedExit (Ghcb, Regs, InstructionData);
     }
 
+    Status = ValidateMmioMemory (Ghcb, InstructionData->Ext.RmData, Bytes);
+    if (Status != 0) {
+      return Status;
+    }
+
     ExitInfo1 = InstructionData->Ext.RmData;
     ExitInfo2 = Bytes;
 
     Ghcb->SaveArea.SwScratch = (UINT64) Ghcb->SharedBuffer;
+    VmgSetOffsetValid (Ghcb, GhcbSwScratch);
     Status = VmgExit (Ghcb, SVM_EXIT_MMIO_READ, ExitInfo1, ExitInfo2);
     if (Status != 0) {
       return Status;
@@ -797,6 +864,64 @@ MmioExit (
     break;
 
   //
+  // MMIO read (MOV aX, moffsetX)
+  //
+  case 0xA0:
+    Bytes = 1;
+    //
+    // fall through
+    //
+  case 0xA1:
+    Bytes = ((Bytes != 0) ? Bytes :
+             (InstructionData->DataSize == Size16Bits) ? 2 :
+             (InstructionData->DataSize == Size32Bits) ? 4 :
+             (InstructionData->DataSize == Size64Bits) ? 8 :
+             0);
+
+    InstructionData->ImmediateSize = (UINTN) (1 << InstructionData->AddrSize);
+    InstructionData->End += InstructionData->ImmediateSize;
+
+    //
+    // This code is X64 only, so a possible 8-byte copy to a UINTN is ok.
+    // Use a STATIC_ASSERT to be certain the code is being built as X64.
+    //
+    STATIC_ASSERT (
+      sizeof (UINTN) == sizeof (UINT64),
+      "sizeof (UINTN) != sizeof (UINT64), this file must be built as X64"
+      );
+
+    Address = 0;
+    CopyMem (
+      &Address,
+      InstructionData->Immediate,
+      InstructionData->ImmediateSize
+      );
+
+    Status = ValidateMmioMemory (Ghcb, Address, Bytes);
+    if (Status != 0) {
+      return Status;
+    }
+
+    ExitInfo1 = Address;
+    ExitInfo2 = Bytes;
+
+    Ghcb->SaveArea.SwScratch = (UINT64) Ghcb->SharedBuffer;
+    VmgSetOffsetValid (Ghcb, GhcbSwScratch);
+    Status = VmgExit (Ghcb, SVM_EXIT_MMIO_READ, ExitInfo1, ExitInfo2);
+    if (Status != 0) {
+      return Status;
+    }
+
+    if (Bytes == 4) {
+      //
+      // Zero-extend for 32-bit operation
+      //
+      Regs->Rax = 0;
+    }
+    CopyMem (&Regs->Rax, Ghcb->SharedBuffer, Bytes);
+    break;
+
+  //
   // MMIO read w/ zero-extension ((MOVZX regX, reg/memX)
   //
   case 0xB6:
@@ -805,19 +930,26 @@ MmioExit (
     // fall through
     //
   case 0xB7:
+    DecodeModRm (Regs, InstructionData);
     Bytes = (Bytes != 0) ? Bytes : 2;
+
+    Status = ValidateMmioMemory (Ghcb, InstructionData->Ext.RmData, Bytes);
+    if (Status != 0) {
+      return Status;
+    }
 
     ExitInfo1 = InstructionData->Ext.RmData;
     ExitInfo2 = Bytes;
 
     Ghcb->SaveArea.SwScratch = (UINT64) Ghcb->SharedBuffer;
+    VmgSetOffsetValid (Ghcb, GhcbSwScratch);
     Status = VmgExit (Ghcb, SVM_EXIT_MMIO_READ, ExitInfo1, ExitInfo2);
     if (Status != 0) {
       return Status;
     }
 
     Register = GetRegisterPointer (Regs, InstructionData->Ext.ModRm.Reg);
-    SetMem (Register, InstructionData->DataSize, 0);
+    SetMem (Register, (UINTN) (1 << InstructionData->DataSize), 0);
     CopyMem (Register, Ghcb->SharedBuffer, Bytes);
     break;
 
@@ -830,12 +962,19 @@ MmioExit (
     // fall through
     //
   case 0xBF:
+    DecodeModRm (Regs, InstructionData);
     Bytes = (Bytes != 0) ? Bytes : 2;
+
+    Status = ValidateMmioMemory (Ghcb, InstructionData->Ext.RmData, Bytes);
+    if (Status != 0) {
+      return Status;
+    }
 
     ExitInfo1 = InstructionData->Ext.RmData;
     ExitInfo2 = Bytes;
 
     Ghcb->SaveArea.SwScratch = (UINT64) Ghcb->SharedBuffer;
+    VmgSetOffsetValid (Ghcb, GhcbSwScratch);
     Status = VmgExit (Ghcb, SVM_EXIT_MMIO_READ, ExitInfo1, ExitInfo2);
     if (Status != 0) {
       return Status;
@@ -854,11 +993,12 @@ MmioExit (
     }
 
     Register = GetRegisterPointer (Regs, InstructionData->Ext.ModRm.Reg);
-    SetMem (Register, InstructionData->DataSize, SignByte);
+    SetMem (Register, (UINTN) (1 << InstructionData->DataSize), SignByte);
     CopyMem (Register, Ghcb->SharedBuffer, Bytes);
     break;
 
   default:
+    DEBUG ((DEBUG_ERROR, "Invalid MMIO opcode (%x)\n", OpCode));
     Status = GP_EXCEPTION;
     ASSERT (FALSE);
   }
@@ -891,9 +1031,9 @@ MwaitExit (
   DecodeModRm (Regs, InstructionData);
 
   Ghcb->SaveArea.Rax = Regs->Rax;
-  GhcbSetRegValid (Ghcb, GhcbRax);
+  VmgSetOffsetValid (Ghcb, GhcbRax);
   Ghcb->SaveArea.Rcx = Regs->Rcx;
-  GhcbSetRegValid (Ghcb, GhcbRcx);
+  VmgSetOffsetValid (Ghcb, GhcbRcx);
 
   return VmgExit (Ghcb, SVM_EXIT_MWAIT, 0, 0);
 }
@@ -923,11 +1063,11 @@ MonitorExit (
   DecodeModRm (Regs, InstructionData);
 
   Ghcb->SaveArea.Rax = Regs->Rax;  // Identity mapped, so VA = PA
-  GhcbSetRegValid (Ghcb, GhcbRax);
+  VmgSetOffsetValid (Ghcb, GhcbRax);
   Ghcb->SaveArea.Rcx = Regs->Rcx;
-  GhcbSetRegValid (Ghcb, GhcbRcx);
+  VmgSetOffsetValid (Ghcb, GhcbRcx);
   Ghcb->SaveArea.Rdx = Regs->Rdx;
-  GhcbSetRegValid (Ghcb, GhcbRdx);
+  VmgSetOffsetValid (Ghcb, GhcbRdx);
 
   return VmgExit (Ghcb, SVM_EXIT_MONITOR, 0, 0);
 }
@@ -988,9 +1128,9 @@ RdtscpExit (
     return Status;
   }
 
-  if (!GhcbIsRegValid (Ghcb, GhcbRax) ||
-      !GhcbIsRegValid (Ghcb, GhcbRcx) ||
-      !GhcbIsRegValid (Ghcb, GhcbRdx)) {
+  if (!VmgIsOffsetValid (Ghcb, GhcbRax) ||
+      !VmgIsOffsetValid (Ghcb, GhcbRcx) ||
+      !VmgIsOffsetValid (Ghcb, GhcbRdx)) {
     return UnsupportedExit (Ghcb, Regs, InstructionData);
   }
   Regs->Rax = Ghcb->SaveArea.Rax;
@@ -1027,16 +1167,16 @@ VmmCallExit (
   DecodeModRm (Regs, InstructionData);
 
   Ghcb->SaveArea.Rax = Regs->Rax;
-  GhcbSetRegValid (Ghcb, GhcbRax);
+  VmgSetOffsetValid (Ghcb, GhcbRax);
   Ghcb->SaveArea.Cpl = (UINT8) (Regs->Cs & 0x3);
-  GhcbSetRegValid (Ghcb, GhcbCpl);
+  VmgSetOffsetValid (Ghcb, GhcbCpl);
 
   Status = VmgExit (Ghcb, SVM_EXIT_VMMCALL, 0, 0);
   if (Status != 0) {
     return Status;
   }
 
-  if (!GhcbIsRegValid (Ghcb, GhcbRax)) {
+  if (!VmgIsOffsetValid (Ghcb, GhcbRax)) {
     return UnsupportedExit (Ghcb, Regs, InstructionData);
   }
   Regs->Rax = Ghcb->SaveArea.Rax;
@@ -1074,15 +1214,15 @@ MsrExit (
   case 0x30: // WRMSR
     ExitInfo1 = 1;
     Ghcb->SaveArea.Rax = Regs->Rax;
-    GhcbSetRegValid (Ghcb, GhcbRax);
+    VmgSetOffsetValid (Ghcb, GhcbRax);
     Ghcb->SaveArea.Rdx = Regs->Rdx;
-    GhcbSetRegValid (Ghcb, GhcbRdx);
+    VmgSetOffsetValid (Ghcb, GhcbRdx);
     //
     // fall through
     //
   case 0x32: // RDMSR
     Ghcb->SaveArea.Rcx = Regs->Rcx;
-    GhcbSetRegValid (Ghcb, GhcbRcx);
+    VmgSetOffsetValid (Ghcb, GhcbRcx);
     break;
   default:
     return UnsupportedExit (Ghcb, Regs, InstructionData);
@@ -1094,8 +1234,8 @@ MsrExit (
   }
 
   if (ExitInfo1 == 0) {
-    if (!GhcbIsRegValid (Ghcb, GhcbRax) ||
-        !GhcbIsRegValid (Ghcb, GhcbRdx)) {
+    if (!VmgIsOffsetValid (Ghcb, GhcbRax) ||
+        !VmgIsOffsetValid (Ghcb, GhcbRdx)) {
       return UnsupportedExit (Ghcb, Regs, InstructionData);
     }
     Regs->Rax = Ghcb->SaveArea.Rax;
@@ -1289,6 +1429,7 @@ IoioExit (
       }
 
       Ghcb->SaveArea.SwScratch = (UINT64) Ghcb->SharedBuffer;
+      VmgSetOffsetValid (Ghcb, GhcbSwScratch);
       Status = VmgExit (Ghcb, SVM_EXIT_IOIO_PROT, ExitInfo1, ExitInfo2);
       if (Status != 0) {
         return Status;
@@ -1311,7 +1452,7 @@ IoioExit (
     } else {
       CopyMem (&Ghcb->SaveArea.Rax, &Regs->Rax, IOIO_DATA_BYTES (ExitInfo1));
     }
-    GhcbSetRegValid (Ghcb, GhcbRax);
+    VmgSetOffsetValid (Ghcb, GhcbRax);
 
     Status = VmgExit (Ghcb, SVM_EXIT_IOIO_PROT, ExitInfo1, 0);
     if (Status != 0) {
@@ -1319,7 +1460,7 @@ IoioExit (
     }
 
     if ((ExitInfo1 & IOIO_TYPE_IN) != 0) {
-      if (!GhcbIsRegValid (Ghcb, GhcbRax)) {
+      if (!VmgIsOffsetValid (Ghcb, GhcbRax)) {
         return UnsupportedExit (Ghcb, Regs, InstructionData);
       }
       CopyMem (&Regs->Rax, &Ghcb->SaveArea.Rax, IOIO_DATA_BYTES (ExitInfo1));
@@ -1379,15 +1520,15 @@ CpuidExit (
   UINT64  Status;
 
   Ghcb->SaveArea.Rax = Regs->Rax;
-  GhcbSetRegValid (Ghcb, GhcbRax);
+  VmgSetOffsetValid (Ghcb, GhcbRax);
   Ghcb->SaveArea.Rcx = Regs->Rcx;
-  GhcbSetRegValid (Ghcb, GhcbRcx);
+  VmgSetOffsetValid (Ghcb, GhcbRcx);
   if (Regs->Rax == CPUID_EXTENDED_STATE) {
     IA32_CR4  Cr4;
 
     Cr4.UintN = AsmReadCr4 ();
     Ghcb->SaveArea.XCr0 = (Cr4.Bits.OSXSAVE == 1) ? AsmXGetBv (0) : 1;
-    GhcbSetRegValid (Ghcb, GhcbXCr0);
+    VmgSetOffsetValid (Ghcb, GhcbXCr0);
   }
 
   Status = VmgExit (Ghcb, SVM_EXIT_CPUID, 0, 0);
@@ -1395,10 +1536,10 @@ CpuidExit (
     return Status;
   }
 
-  if (!GhcbIsRegValid (Ghcb, GhcbRax) ||
-      !GhcbIsRegValid (Ghcb, GhcbRbx) ||
-      !GhcbIsRegValid (Ghcb, GhcbRcx) ||
-      !GhcbIsRegValid (Ghcb, GhcbRdx)) {
+  if (!VmgIsOffsetValid (Ghcb, GhcbRax) ||
+      !VmgIsOffsetValid (Ghcb, GhcbRbx) ||
+      !VmgIsOffsetValid (Ghcb, GhcbRcx) ||
+      !VmgIsOffsetValid (Ghcb, GhcbRdx)) {
     return UnsupportedExit (Ghcb, Regs, InstructionData);
   }
   Regs->Rax = Ghcb->SaveArea.Rax;
@@ -1434,15 +1575,15 @@ RdpmcExit (
   UINT64  Status;
 
   Ghcb->SaveArea.Rcx = Regs->Rcx;
-  GhcbSetRegValid (Ghcb, GhcbRcx);
+  VmgSetOffsetValid (Ghcb, GhcbRcx);
 
   Status = VmgExit (Ghcb, SVM_EXIT_RDPMC, 0, 0);
   if (Status != 0) {
     return Status;
   }
 
-  if (!GhcbIsRegValid (Ghcb, GhcbRax) ||
-      !GhcbIsRegValid (Ghcb, GhcbRdx)) {
+  if (!VmgIsOffsetValid (Ghcb, GhcbRax) ||
+      !VmgIsOffsetValid (Ghcb, GhcbRdx)) {
     return UnsupportedExit (Ghcb, Regs, InstructionData);
   }
   Regs->Rax = Ghcb->SaveArea.Rax;
@@ -1480,8 +1621,8 @@ RdtscExit (
     return Status;
   }
 
-  if (!GhcbIsRegValid (Ghcb, GhcbRax) ||
-      !GhcbIsRegValid (Ghcb, GhcbRdx)) {
+  if (!VmgIsOffsetValid (Ghcb, GhcbRax) ||
+      !VmgIsOffsetValid (Ghcb, GhcbRdx)) {
     return UnsupportedExit (Ghcb, Regs, InstructionData);
   }
   Regs->Rax = Ghcb->SaveArea.Rax;
@@ -1531,7 +1672,7 @@ Dr7WriteExit (
   // Using a value of 0 for ExitInfo1 means RAX holds the value
   //
   Ghcb->SaveArea.Rax = *Register;
-  GhcbSetRegValid (Ghcb, GhcbRax);
+  VmgSetOffsetValid (Ghcb, GhcbRax);
 
   Status = VmgExit (Ghcb, SVM_EXIT_DR7_WRITE, 0, 0);
   if (Status != 0) {
@@ -1539,7 +1680,7 @@ Dr7WriteExit (
   }
 
   SevEsData->Dr7 = *Register;
-  SevEsData->Dr7Cached = TRUE;
+  SevEsData->Dr7Cached = 1;
 
   return 0;
 }
@@ -1583,7 +1724,7 @@ Dr7ReadExit (
   // If there is a cached valued for DR7, return that. Otherwise return the
   // DR7 standard reset value of 0x400 (no debug breakpoints set).
   //
-  *Register = (SevEsData->Dr7Cached) ? SevEsData->Dr7 : 0x400;
+  *Register = (SevEsData->Dr7Cached == 1) ? SevEsData->Dr7 : 0x400;
 
   return 0;
 }
@@ -1593,6 +1734,7 @@ Dr7ReadExit (
 
   Performs the necessary processing to handle a #VC exception.
 
+  @param[in, out]  Ghcb           Pointer to the GHCB
   @param[in, out]  ExceptionType  Pointer to an EFI_EXCEPTION_TYPE to be set
                                   as value to use on error.
   @param[in, out]  SystemContext  Pointer to EFI_SYSTEM_CONTEXT
@@ -1606,29 +1748,24 @@ Dr7ReadExit (
 **/
 EFI_STATUS
 EFIAPI
-VmgExitHandleVc (
+InternalVmgExitHandleVc (
+  IN OUT GHCB                *Ghcb,
   IN OUT EFI_EXCEPTION_TYPE  *ExceptionType,
   IN OUT EFI_SYSTEM_CONTEXT  SystemContext
   )
 {
-  MSR_SEV_ES_GHCB_REGISTER  Msr;
   EFI_SYSTEM_CONTEXT_X64    *Regs;
-  GHCB                      *Ghcb;
   NAE_EXIT                  NaeExit;
   SEV_ES_INSTRUCTION_DATA   InstructionData;
   UINT64                    ExitCode, Status;
   EFI_STATUS                VcRet;
+  BOOLEAN                   InterruptState;
 
   VcRet = EFI_SUCCESS;
 
-  Msr.GhcbPhysicalAddress = AsmReadMsr64 (MSR_SEV_ES_GHCB);
-  ASSERT (Msr.GhcbInfo.Function == 0);
-  ASSERT (Msr.Ghcb != 0);
-
   Regs = SystemContext.SystemContextX64;
-  Ghcb = Msr.Ghcb;
 
-  VmgInit (Ghcb);
+  VmgInit (Ghcb, &InterruptState);
 
   ExitCode = Regs->ExceptionData;
   switch (ExitCode) {
@@ -1712,7 +1849,29 @@ VmgExitHandleVc (
     VcRet = EFI_PROTOCOL_ERROR;
   }
 
-  VmgDone (Ghcb);
+  VmgDone (Ghcb, InterruptState);
 
   return VcRet;
+}
+
+/**
+  Routine to allow ASSERT from within #VC.
+
+  @param[in, out]  SevEsData  Pointer to the per-CPU data
+
+**/
+VOID
+EFIAPI
+VmgExitIssueAssert (
+  IN OUT SEV_ES_PER_CPU_DATA  *SevEsData
+  )
+{
+  //
+  // Progress will be halted, so set VcCount to allow for ASSERT output
+  // to be seen.
+  //
+  SevEsData->VcCount = 0;
+
+  ASSERT (FALSE);
+  CpuDeadLoop ();
 }

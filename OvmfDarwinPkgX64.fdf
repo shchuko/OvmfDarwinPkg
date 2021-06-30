@@ -1,7 +1,6 @@
 ## @file
 #  Open Virtual Machine Firmware: FDF
 #
-#  Copyright (c) 2020, Vladislav Yaroshchuk <yaroshchuk2000@gmail.com>
 #  Copyright (c) 2006 - 2019, Intel Corporation. All rights reserved.<BR>
 #  (C) Copyright 2016 Hewlett Packard Enterprise Development LP<BR>
 #
@@ -85,6 +84,9 @@ gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecGhcbBase|gUefiOvmfPkgTokenSpaceGuid.PcdOvmf
 
 0x00B000|0x001000
 gUefiCpuPkgTokenSpaceGuid.PcdSevEsWorkAreaBase|gUefiCpuPkgTokenSpaceGuid.PcdSevEsWorkAreaSize
+
+0x00C000|0x001000
+gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecGhcbBackupBase|gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecGhcbBackupSize
 
 0x010000|0x010000
 gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecPeiTempRamBase|gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecPeiTempRamSize
@@ -172,6 +174,7 @@ INF  OvmfDarwinPkg/SmmAccess/SmmAccessPei.inf
 INF  UefiCpuPkg/CpuMpPei/CpuMpPei.inf
 
 !if $(TPM_ENABLE) == TRUE
+INF  OvmfDarwinPkg/Tcg/TpmMmioSevDecryptPei/TpmMmioSevDecryptPei.inf
 INF  OvmfDarwinPkg/Tcg/Tcg2Config/Tcg2ConfigPei.inf
 INF  SecurityPkg/Tcg/TcgPei/TcgPei.inf
 INF  SecurityPkg/Tcg/Tcg2Pei/Tcg2Pei.inf
@@ -299,21 +302,13 @@ INF  MdeModulePkg/Universal/Acpi/S3SaveStateDxe/S3SaveStateDxe.inf
 INF  MdeModulePkg/Universal/Acpi/BootScriptExecutorDxe/BootScriptExecutorDxe.inf
 INF  MdeModulePkg/Universal/Acpi/BootGraphicsResourceTableDxe/BootGraphicsResourceTableDxe.inf
 
-#
-# HFS+ Support
-#
-INF  OvmfDarwinPkg/OpenHfsPlus/OpenHfsPlus.inf
-
-#
-# APFS Support
-#
-INF OvmfDarwinPkg/ApfsDriverLoader/ApfsDriverLoader.inf
-
 INF  FatPkg/EnhancedFatDxe/Fat.inf
 INF  MdeModulePkg/Universal/Disk/UdfDxe/UdfDxe.inf
+INF  OvmfDarwinPkg/VirtioFsDxe/VirtioFsDxe.inf
 
 !if $(TOOL_CHAIN_TAG) != "XCODE5"
 INF  ShellPkg/DynamicCommand/TftpDynamicCommand/TftpDynamicCommand.inf
+INF  ShellPkg/DynamicCommand/HttpDynamicCommand/HttpDynamicCommand.inf
 INF  OvmfDarwinPkg/LinuxInitrdDynamicShellCommand/LinuxInitrdDynamicShellCommand.inf
 !endif
 INF  ShellPkg/Application/Shell/Shell.inf
@@ -330,11 +325,6 @@ INF MdeModulePkg/Logo/LogoDxe.inf
 !endif
 !include NetworkPkg/Network.fdf.inc
   INF  OvmfDarwinPkg/VirtioNetDxe/VirtioNet.inf
-
-#
-# Required by AppleSupportLib
-#
-INF  IntelFrameworkModulePkg/Universal/DataHubDxe/DataHubDxe.inf
 
 #
 # Usb Support

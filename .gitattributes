@@ -1,0 +1,16 @@
+* text=auto
+
+*.c text eol=crlf
+*.h text eol=crlf
+*.inf text eol=crlf
+*.dec text eol=crlf
+*.dsc text eol=crlf
+*.fdf text eol=crlf
+*.inc text eol=crlf
+*.uni text eol=crlf
+*.asl text eol=crlf
+*.aslc text eol=crlf
+
+*.sh text eol=lf
+*.md text eol=lf
+*.txt text eol=lf

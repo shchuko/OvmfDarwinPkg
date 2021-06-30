@@ -11,7 +11,7 @@ DefinitionBlock ("Dsdt.aml", "DSDT", 1, "INTEL ", "OVMF    ", 4) {
   // System Sleep States
   //
   // We build S3 and S4 with GetSuspendStates() in
-  // "OvmfPkg/AcpiPlatformDxe/Qemu.c".
+  // "OvmfDarwinPkg/AcpiPlatformDxe/Qemu.c".
   //
   Name (\_S0, Package () {5, 0, 0, 0}) // Working
   Name (\_S5, Package () {0, 0, 0, 0}) // Soft Off
@@ -126,7 +126,7 @@ DefinitionBlock ("Dsdt.aml", "DSDT", 1, "INTEL ", "OVMF    ", 4) {
 
       Method (_CRS, 0, Serialized) {
         //
-        // see the FIRMWARE_DATA structure in "OvmfPkg/AcpiPlatformDxe/Qemu.c"
+        // see the FIRMWARE_DATA structure in "OvmfDarwinPkg/AcpiPlatformDxe/Qemu.c"
         //
         External (FWDT, OpRegionObj)
         Field(FWDT, QWordAcc, NoLock, Preserve) {
@@ -208,7 +208,7 @@ DefinitionBlock ("Dsdt.aml", "DSDT", 1, "INTEL ", "OVMF    ", 4) {
             // of SCI, the interrupt would be treated as "active low,
             // shareable, level", and that doesn't match qemu.
             //
-            // In QemuInstallAcpiMadtTable() [OvmfPkg/AcpiPlatformDxe/Qemu.c]
+            // In QemuInstallAcpiMadtTable() [OvmfDarwinPkg/AcpiPlatformDxe/Qemu.c]
             // we install an Interrupt Override Structure for the identity
             // mapped IRQ#9 / GSI 9 (the corresponding bit being set in
             // Pcd8259LegacyModeEdgeLevel), which describes the correct

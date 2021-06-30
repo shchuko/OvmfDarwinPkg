@@ -2,7 +2,7 @@
 
   This driver produces EFI_RNG_PROTOCOL instances for virtio-rng devices.
 
-  The implementation is based on OvmfPkg/VirtioScsiDxe/VirtioScsi.c
+  The implementation is based on OvmfDarwinPkg/VirtioScsiDxe/VirtioScsi.c
 
   Copyright (C) 2012, Red Hat, Inc.
   Copyright (c) 2012 - 2014, Intel Corporation. All rights reserved.<BR>

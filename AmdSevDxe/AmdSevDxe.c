@@ -4,12 +4,13 @@
   in APRIORI. It clears C-bit from MMIO and NonExistent Memory space when SEV
   is enabled.
 
-  Copyright (c) 2017, AMD Inc. All rights reserved.<BR>
+  Copyright (c) 2017 - 2020, AMD Inc. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
+#include <IndustryStandard/Q35MchIch9.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
@@ -66,6 +67,23 @@ AmdSevDxeEntryPoint (
   }
 
   //
+  // If PCI Express is enabled, the MMCONFIG area has been reserved, rather
+  // than marked as MMIO, and so the C-bit won't be cleared by the above walk
+  // through the GCD map. Check for the MMCONFIG area and clear the C-bit for
+  // the range.
+  //
+  if (PcdGet16 (PcdOvmfHostBridgePciDevId) == INTEL_Q35_MCH_DEVICE_ID) {
+    Status = MemEncryptSevClearPageEncMask (
+               0,
+               FixedPcdGet64 (PcdPciExpressBaseAddress),
+               EFI_SIZE_TO_PAGES (SIZE_256MB),
+               FALSE
+               );
+
+    ASSERT_EFI_ERROR (Status);
+  }
+
+  //
   // When SMM is enabled, clear the C-bit from SMM Saved State Area
   //
   // NOTES: The SavedStateArea address cleared here is before SMBASE
@@ -82,7 +100,7 @@ AmdSevDxeEntryPoint (
   // otherwise hardware will cause trap.
   //
   // We restore the C-bit for this SMM Saved State Area after SMBASE relocation
-  // is completed (See OvmfPkg/Library/SmmCpuFeaturesLib/SmmCpuFeaturesLib.c).
+  // is completed (See OvmfDarwinPkg/Library/SmmCpuFeaturesLib/SmmCpuFeaturesLib.c).
   //
   if (FeaturePcdGet (PcdSmmSmramRequire)) {
     UINTN MapPagesBase;

@@ -10,7 +10,7 @@
   - https://www.kraxel.org/virtio/
 
   This header file is minimal, and only defines the types and macros that are
-  necessary for the OvmfPkg implementation.
+  necessary for the OvmfDarwinPkg implementation.
 
   Copyright (C) 2016, Red Hat, Inc.
 

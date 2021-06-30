@@ -1,7 +1,7 @@
 ![Build](https://github.com/shchuko/OvmfDarwinPkg/workflows/Build/badge.svg?branch=master)
 # OvmfDarwinPkg
 
-[OVMF](https://github.com/tianocore/edk2/tree/master/OvmfPkg) clone that provides macOS guests support 
+[OVMF](https://github.com/tianocore/edk2/tree/master/OvmfDarwinPkg) clone that provides macOS guests support 
 with no third-party bootloaders
 
 ## Build notes
@@ -61,9 +61,9 @@ build -a X64 -t GCC5 -p OvmfDarwinPkg/OvmfDarwinPkgX64.dsc -b DEBUG
 
 ## Added components
 
-- [OpenHfsPlus](OpenHfsPlus), based on https://github.com/gsomlo/edk2/tree/gls-hfsplus/OvmfPkg/FswHfsPlus
+- [OpenHfsPlus](OpenHfsPlus), based on https://github.com/gsomlo/edk2/tree/gls-hfsplus/OvmfDarwinPkg/FswHfsPlus
 
-- [AppleSupportLib](Library/AppleSupportLib), based on https://github.com/fishman/edk2/tree/apple63/OvmfPkg/Library/AppleSupportLib
+- [AppleSupportLib](Library/AppleSupportLib), based on https://github.com/fishman/edk2/tree/apple63/OvmfDarwinPkg/Library/AppleSupportLib
 
 - [IntelFrameworkPkg](LegacyPackages/IntelFrameworkPkg), from [UDK2018](https://github.com/tianocore/edk2/tree/UDK2018/IntelFrameworkPkg)
 

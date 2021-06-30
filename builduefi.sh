@@ -2,12 +2,35 @@
 ##
 # edk2 build command wrapper
 #
+# Note: set '$EDK_DIR' to specify edk2 sources root
+#       if not set, edk2 will be cloned using cloneEdk()
+#
 # Copyright (c) 2021, Vladislav Yaroshchuk <yaroshchuk2000@gmail.com>
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 #
 ##
+set -eo pipefail
+
+cloneEdk() {
+  EDK_REMOTE="https://github.com/tianocore/edk2.git"
+  EDK_BRANCH="edk2-stable202105"
+  EDK_DIR="$PWD/edk2"
+
+  if [[ ! -d "$EDK_DIR" ]]; then
+    git clone --filter=blob:none --single-branch --branch "$EDK_BRANCH" "$EDK_REMOTE" "$EDK_DIR"
+
+    cd "$EDK_DIR"
+    git submodule update --init
+    make -C BaseTools
+    cd - 1>/dev/null
+  fi
+}
 
 setEnv() {
+  if [[ -z ${EDK_DIR+x} ]]; then
+    cloneEdk
+  fi
+
   PKG_PATH="$PWD"
   PKG_SHORTNAME="OvmfDarwin"
   PKG_NAME="${PKG_SHORTNAME}Pkg"
@@ -18,19 +41,16 @@ setEnv() {
   BINARIES_DIR="$PKG_PATH/Binaries"
   CREATE_ZIP="False"
 
-  # EDK2 stable branch is used
-  EDK_REMOTE="https://github.com/tianocore/edk2.git"
-  EDK_BRANCH="edk2-stable202008"
-  EDK_DIR="$PKG_PATH/edk2"
-
   PKG_LINK_PATH="$EDK_DIR/$PKG_NAME"
 }
 
 cleanup() {
   echo "Doing cleanup..."
-  cd "${BINARIES_DIR:?}" || return
-  rm -rf -- *
-  cd - || return
+  if [[ -d "$BINARIES_DIR" ]]; then
+    cd "${BINARIES_DIR:?}"
+    rm -rf -- *
+    cd -
+  fi
 }
 
 loadEnvDefaults() {
@@ -76,21 +96,12 @@ printHelp() {
   return $ret
 }
 
-setupEdk() {
-  [[ ! -d "$EDK_DIR" ]] && git clone --filter=blob:none --single-branch --branch "$EDK_BRANCH" "$EDK_REMOTE" "$EDK_DIR"
-
-  cd "$EDK_DIR" || exit 1
-
-  git submodule update --init
-  make -C BaseTools || exit 1
-
-  cd "$PKG_PATH" || exit 1
-}
-
 createLinks() {
-  [[ ! -d $PKG_LINK_PATH ]] && ln -s "$PKG_PATH" "$PKG_LINK_PATH"
+  if [[ ! -d $PKG_LINK_PATH ]]; then
+    ln -s "$PKG_PATH" "$PKG_LINK_PATH"
+  fi
 
-  cd "$EDK_DIR" || exit 1
+  cd "$EDK_DIR"
 
   [[ -d "$PKG_PATH/LegacyPackages" ]] &&
     while read -r LEGACY_PKG_PATH; do
@@ -98,13 +109,12 @@ createLinks() {
       [[ -d $LEGACY_PKG_LINK ]] || ln -s "$LEGACY_PKG_PATH" "$LEGACY_PKG_LINK"
     done < <(find "$PKG_PATH/LegacyPackages" -maxdepth 1 -type d)
 
-  cd "$PKG_PATH" || exit 1
-
-  # Copy 'Build' directory easier to work with
-  [[ ! -d Build ]] && ln -s "$EDK_DIR/Build" "Build"
+  cd "$PKG_PATH"
 
   # Create 'Binaries' dir
-  [[ ! -d "$BINARIES_DIR" ]] && mkdir -p "$BINARIES_DIR"
+  if [[ ! -d "$BINARIES_DIR" ]]; then
+    mkdir -p "$BINARIES_DIR"
+  fi
 }
 
 updEnv() {
@@ -122,22 +132,22 @@ packBinaries() {
   cp "$FIRMWARE_CODE_SRC" "$BINARIES_DIR/$FIRMWARE_CODE_BASENAME"
   cp "$FIRMWARE_VARS_SRC" "$BINARIES_DIR/$FIRMWARE_VARS_BASENAME"
 
-  echo "[$PKG_NAME]
-  TARGET=$TARGET
-  ARCH=$TARGET_ARCH
-  TOOLCHAIN=$TOOLCHAIN" >"$BINARIES_DIR/FV_INFO.CONF"
+  echo "$PKG_NAME:
+  TARGET: $TARGET
+  ARCH: $TARGET_ARCH
+  TOOLCHAIN: $TOOLCHAIN" >"$BINARIES_DIR/FV_INFO.yaml"
 
   if [[ "$CREATE_ZIP" == "True" ]]; then
     echo "Creating zip archive..."
-    cd "$BINARIES_DIR" || exit 1
-    zip -qr "$BINARIES_DIR/${PKG_SHORTNAME}Bin.zip" ./* || exit 1
-    cd "$PKG_PATH" || exit 1
+    cd "$BINARIES_DIR"
+    zip -qr "$BINARIES_DIR/${PKG_SHORTNAME}Bin.zip" ./*
+    cd "$PKG_PATH"
     echo "- Done -"
   fi
 }
 
 runBuild() {
-  cd "$EDK_DIR" || exit 1
+  cd "$EDK_DIR"
 
   CMD="build -a $TARGET_ARCH -t $TOOLCHAIN -p $ACTIVE_PLATFORM -b $TARGET $BUILD_COMMAND_ARGS"
   echo "exec: $CMD"
@@ -146,7 +156,7 @@ runBuild() {
   eval "$CMD"
   EXIT_STATUS=$?
 
-  cd "$PKG_PATH" || exit 1
+  cd "$PKG_PATH"
 
   return $EXIT_STATUS
 }
@@ -210,7 +220,6 @@ if ! loadEnvDefaults && [[ -z "$CUSTOM_TOOLCHAIN" ]]; then
 fi
 
 updEnv
-setupEdk
 createLinks
 
 if runBuild; then

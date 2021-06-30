@@ -302,7 +302,7 @@ VirtioGpuExitBoot (
 
   For the command-specific parameters, please consult the GPU Device section of
   the VirtIo 1.0 specification (see references in
-  "OvmfPkg/Include/IndustryStandard/VirtioGpu.h").
+  "OvmfDarwinPkg/Include/IndustryStandard/VirtioGpu.h").
 **/
 EFI_STATUS
 VirtioGpuResourceCreate2d (
