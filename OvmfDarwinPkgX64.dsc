@@ -125,6 +125,8 @@
 
 !include MdePkg/MdeLibs.dsc.inc
 
+!include OvmfDarwinPkg/DarwinLibs.dsc.inc
+
 [LibraryClasses]
   PcdLib|MdePkg/Library/BasePcdLibNull/BasePcdLibNull.inf
   TimerLib|OvmfDarwinPkg/Library/AcpiTimerLib/BaseAcpiTimerLib.inf

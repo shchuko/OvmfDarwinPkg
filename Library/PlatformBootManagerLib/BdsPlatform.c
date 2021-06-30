@@ -12,6 +12,7 @@
 #include <Library/PlatformBmPrintScLib.h>
 #include <Library/Tcg2PhysicalPresenceLib.h>
 #include <Library/XenPlatformLib.h>
+#include <Library/Darwin/AppleSupportLib.h>
 
 
 //
@@ -364,6 +365,11 @@ PlatformBootManagerBeforeConsole (
 
   VisitAllInstancesOfProtocol (&gEfiPciRootBridgeIoProtocolGuid,
     ConnectRootBridge, NULL);
+
+  //
+  // Initialize AppleSupportLib
+  //
+  InitializeAppleSupport (gImageHandle, gST);
 
   //
   // Signal the ACPI platform driver that it can download QEMU ACPI tables.

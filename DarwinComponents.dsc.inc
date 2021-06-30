@@ -13,3 +13,8 @@ OvmfDarwinPkg/OpenHfsPlus/OpenHfsPlus.inf
 # APFS Support
 #
 OvmfDarwinPkg/ApfsDriverLoader/ApfsDriverLoader.inf
+
+#
+# AppleSupportLib requirement
+#
+IntelFrameworkModulePkg/Universal/DataHubDxe/DataHubDxe.inf
