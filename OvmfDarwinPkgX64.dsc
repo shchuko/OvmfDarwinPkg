@@ -686,6 +686,11 @@
   OvmfDarwinPkg/ResetVector/ResetVector.inf
 
   #
+  # Darwin components
+  #
+!include OvmfDarwinPkg/DarwinComponents.dsc.inc
+
+  #
   # SEC Phase modules
   #
   OvmfDarwinPkg/Sec/SecMain.inf {

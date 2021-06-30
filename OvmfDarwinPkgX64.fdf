@@ -212,6 +212,8 @@ APRIORI DXE {
 !endif
 }
 
+!include OvmfDarwinPkg/DarwinComponents.fdf.inc
+
 #
 # DXE Phase modules
 #
