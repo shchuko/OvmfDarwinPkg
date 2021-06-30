@@ -7,13 +7,20 @@ with no third-party bootloaders
 ## Build notes
 
 Check EDK II documentation to prepare the environment (iasl, nasm required). All the OVMF manuals are 
-compatible with this package. Build tested on `edk2-stable202008` version. 
+compatible with this package. Build tested on `edk2-stable202105` version. 
 
 Run this script to perform everything in one command:
 
 ```bash
 # Build defaults - DEBUG,X64,XCODE5(macOS)/GCC5(Linux)
 $ ./builduefi.sh 
+```
+
+Or use Docker container as build environment:
+
+```bash
+# Just a 'builduefi.sh' wrapper
+$ ./dockerbuild.sh 
 ```
 
 More examples:
