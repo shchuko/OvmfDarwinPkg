@@ -38,6 +38,10 @@
   BmDriverHealth.c
   InternalBm.h
 
+  BmAppleFix.c
+  InternalBmAppleFixDepends.h
+  InternalBmAppleFix.h
+
 [Packages]
   OvmfDarwinPkg/OvmfDarwinPkg.dec
   MdePkg/MdePkg.dec

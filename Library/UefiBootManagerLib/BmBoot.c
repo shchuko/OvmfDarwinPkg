@@ -9,6 +9,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
 #include "InternalBm.h"
+#include "InternalBmAppleFix.h"
 
 EFI_RAM_DISK_PROTOCOL                        *mRamDisk                  = NULL;
 
@@ -1912,7 +1913,7 @@ EfiBootManagerBoot (
     Status   = EFI_NOT_FOUND;
     FilePath = NULL;
     EfiBootManagerConnectDevicePath (BootOption->FilePath, NULL);
-    FileBuffer = BmGetNextLoadOptionBuffer (LoadOptionTypeBoot, BootOption->FilePath, &FilePath, &FileSize);
+    FileBuffer = BmGetNextLoadOptionBufferWithAppleFix (LoadOptionTypeBoot, BootOption->FilePath, &FilePath, &FileSize);
     if (FileBuffer != NULL) {
       RamDiskDevicePath = BmGetRamDiskDevicePath (FilePath);
 
