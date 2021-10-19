@@ -38,37 +38,62 @@
           run: brew install acpica nasm mtoc
 
         - name: Build
-          run: ./builduefi.sh -buildRelease -createZip
+          run: ./builduefi.sh -buildRelease
+
+    build-linux-gcc5-debug:
+      name: Linux GCC5 Debug
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v2
+        - name: Dependicies install
+          run: |
+            sudo apt-get update
+            sudo apt-get install nasm uuid-dev libssl-dev iasl
+
+        - name: Set env for release build
+          if: ${{ (github.event_name == 'release') || (github.event_name == 'prerelease') }}
+          run: |
+            TAG_REF="${{ github.ref }}"
+            echo "OVMF_DARWIN_VERSION=${TAG_REF##*/}" >> $GITHUB_ENV
+
+        - name: Build
+          run: ./builduefi.sh -createZip -createTar
+
+        - name: Release files upload
+          if: ${{ (github.event_name == 'release') || (github.event_name == 'prerelease') }}
+          uses: svenstaro/upload-release-action@v2
+          with:
+            repo_token: ${{ secrets.GITHUB_TOKEN }}
+            file: Binaries/ovmf-darwin*
+            tag: ${{ github.ref }}
+            overwrite: true
+            file_glob: true
+
+    build-linux-gcc5-release:
+      name: Linux GCC5 Release
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v2
+        - name: Dependicies install
+          run: |
+            sudo apt-get update
+            sudo apt-get install nasm uuid-dev libssl-dev iasl zip
+
+        - name: Set env for release build
+          if: ${{ (github.event_name == 'release') || (github.event_name == 'prerelease') }}
+          run: |
+            TAG_REF="${{ github.ref }}"
+            echo "OVMF_DARWIN_VERSION=${TAG_REF##*/}" >> $GITHUB_ENV
+
+        - name: Build
+          run: ./builduefi.sh -buildRelease -createZip -createTar
 
         - name: Release upload
           if: ${{ (github.event_name == 'release') || (github.event_name == 'prerelease') }}
           uses: svenstaro/upload-release-action@v2
           with:
             repo_token: ${{ secrets.GITHUB_TOKEN }}
-            file: Binaries/OvmfDarwinBin.zip
+            file: Binaries/ovmf-darwin*
             tag: ${{ github.ref }}
             overwrite: true
-
-    build-linux-gcc5-debug:
-      name: Linux GCC5 Debug
-      runs-on: ubuntu-16.04
-      steps:
-        - uses: actions/checkout@v2
-        - name: Dependicies install
-          run: |
-            sudo apt-get update
-            sudo apt-get install nasm uuid-dev libssl-dev iasl
-        - name: Build
-          run: ./builduefi.sh
-
-    build-linux-gcc5-release:
-      name: Linux GCC5 Release
-      runs-on: ubuntu-16.04
-      steps:
-        - uses: actions/checkout@v2
-        - name: Dependicies install
-          run: |
-            sudo apt-get update
-            sudo apt-get install nasm uuid-dev libssl-dev iasl
-        - name: Build
-          run: ./builduefi.sh -buildRelease -createZip
+            file_glob: true

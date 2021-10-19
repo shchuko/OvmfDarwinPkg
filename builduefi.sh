@@ -40,8 +40,10 @@ setEnv() {
 
   BINARIES_DIR="$PKG_PATH/Binaries"
   CREATE_ZIP="False"
+  CREATE_TAR="False"
 
   PKG_LINK_PATH="$EDK_DIR/$PKG_NAME"
+  VERSION=${OVMF_DARWIN_VERSION:-"SNAPSHOT"}
 }
 
 cleanup() {
@@ -77,6 +79,7 @@ printHelp() {
   echo -e "\t-buildRelease\t\tShortcut for '-b RELEASE'"
   echo -e "\t-debugSerial\t\tShortcut for '-D DEBUG_ON_SERIAL_PORT"
   echo -e "\t-createZip\t\tCreate zip archive with FVs"
+  echo -e "\t-createTar\t\tCreate tar archive with FVs"
   echo -e "\t-b TARGET\t\tCustom build target"
   echo -e "\t-p PLATFORMFILE\t\tCustom platform file (*.dsc)"
   echo -e "\t-t TOOLCHAIN\t\tCustom toolchain"
@@ -132,15 +135,20 @@ packBinaries() {
   cp "$FIRMWARE_CODE_SRC" "$BINARIES_DIR/$FIRMWARE_CODE_BASENAME"
   cp "$FIRMWARE_VARS_SRC" "$BINARIES_DIR/$FIRMWARE_VARS_BASENAME"
 
-  echo "$PKG_NAME:
-  TARGET: $TARGET
-  ARCH: $TARGET_ARCH
-  TOOLCHAIN: $TOOLCHAIN" >"$BINARIES_DIR/FV_INFO.yaml"
+  ARCH_PREFIX="ovmf-darwin-$TARGET_ARCH-$TARGET-$VERSION"
 
   if [[ "$CREATE_ZIP" == "True" ]]; then
     echo "Creating zip archive..."
     cd "$BINARIES_DIR"
-    zip -qr "$BINARIES_DIR/${PKG_SHORTNAME}Bin.zip" ./*
+    zip -qr "$BINARIES_DIR/$ARCH_PREFIX.zip" ./*.fd
+    cd "$PKG_PATH"
+    echo "- Done -"
+  fi
+
+  if [[ "$CREATE_TAR" == "True" ]]; then
+    echo "Creating tar archive..."
+    cd "$BINARIES_DIR"
+    tar -czvf "$BINARIES_DIR/$ARCH_PREFIX.tar.gz" ./*.fd
     cd "$PKG_PATH"
     echo "- Done -"
   fi
@@ -150,6 +158,7 @@ runBuild() {
   cd "$EDK_DIR"
 
   CMD="build -a $TARGET_ARCH -t $TOOLCHAIN -p $ACTIVE_PLATFORM -b $TARGET $BUILD_COMMAND_ARGS"
+  echo "version: $VERSION"
   echo "exec: $CMD"
 
   source edksetup.sh
@@ -200,6 +209,11 @@ readArgs() {
     -createZip)
       CREATE_ZIP="True"
       ;;
+    
+    -createTar)
+      CREATE_TAR="True"
+      ;;
+
 
     *)
       BUILD_COMMAND_ARGS="$BUILD_COMMAND_ARGS$*"
